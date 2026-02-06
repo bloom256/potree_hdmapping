@@ -150,7 +150,7 @@ export class HQSplatRenderer{
 				depthMaterial.visibleNodesTexture = material.visibleNodesTexture;
 				depthMaterial.weighted = false;
 				depthMaterial.screenWidth = width;
-				depthMaterial.shape = PointShape.CIRCLE;
+				depthMaterial.shape = material.shape;
 				depthMaterial.screenHeight = height;
 				depthMaterial.uniforms.visibleNodes.value = material.visibleNodesTexture;
 				depthMaterial.uniforms.octreeSize.value = octreeSize;
@@ -194,7 +194,7 @@ export class HQSplatRenderer{
 				attributeMaterial.weighted = true;
 				attributeMaterial.screenWidth = width;
 				attributeMaterial.screenHeight = height;
-				attributeMaterial.shape = PointShape.CIRCLE;
+				attributeMaterial.shape = material.shape;
 				attributeMaterial.uniforms.visibleNodes.value = material.visibleNodesTexture;
 				attributeMaterial.uniforms.octreeSize.value = octreeSize;
 				attributeMaterial.spacing = pointcloud.pcoGeometry.spacing; // * Math.max(...pointcloud.scale.toArray());

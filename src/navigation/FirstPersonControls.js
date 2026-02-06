@@ -34,12 +34,16 @@ export class FirstPersonControls extends EventDispatcher {
 		this.lockElevation = false;
 
 		this.keys = {
-			FORWARD: ['W'.charCodeAt(0), 38],
-			BACKWARD: ['S'.charCodeAt(0), 40],
-			LEFT: ['A'.charCodeAt(0), 37],
-			RIGHT: ['D'.charCodeAt(0), 39],
-			UP: ['R'.charCodeAt(0), 33],
-			DOWN: ['F'.charCodeAt(0), 34]
+			FORWARD: ['W'.charCodeAt(0)],
+			BACKWARD: ['S'.charCodeAt(0)],
+			LEFT: ['A'.charCodeAt(0)],
+			RIGHT: ['D'.charCodeAt(0)],
+			UP: [32], // space
+			DOWN: [16], // shift
+			ROT_LEFT: [37],  // arrow left
+			ROT_RIGHT: [39], // arrow right
+			ROT_UP: [38],    // arrow up
+			ROT_DOWN: [40]   // arrow down
 		};
 
 		this.fadeFactor = 50;
@@ -72,8 +76,8 @@ export class FirstPersonControls extends EventDispatcher {
 				this.yawDelta += ndrag.x * this.rotationSpeed;
 				this.pitchDelta += ndrag.y * this.rotationSpeed;
 			} else if (e.drag.mouse === MOUSE.RIGHT) {
-				this.translationDelta.x -= ndrag.x * moveSpeed * 100;
-				this.translationDelta.z += ndrag.y * moveSpeed * 100;
+				this.translationDelta.x -= ndrag.x * moveSpeed * 1500;
+				this.translationDelta.z += ndrag.y * moveSpeed * 1500;
 			}
 		};
 
@@ -240,6 +244,22 @@ export class FirstPersonControls extends EventDispatcher {
 			} else if (moveDown) {
 				this.translationWorldDelta.z = -this.viewer.getMoveSpeed();
 			}
+		}
+
+		{ // arrow key rotation
+			let ih = this.viewer.inputHandler;
+
+			let rotLeft = this.keys.ROT_LEFT.some(e => ih.pressedKeys[e]);
+			let rotRight = this.keys.ROT_RIGHT.some(e => ih.pressedKeys[e]);
+			let rotUp = this.keys.ROT_UP.some(e => ih.pressedKeys[e]);
+			let rotDown = this.keys.ROT_DOWN.some(e => ih.pressedKeys[e]);
+
+			let arrowRotSpeed = 0.5;
+
+			if (rotLeft) this.yawDelta -= arrowRotSpeed;
+			if (rotRight) this.yawDelta += arrowRotSpeed;
+			if (rotUp) this.pitchDelta -= arrowRotSpeed;
+			if (rotDown) this.pitchDelta += arrowRotSpeed;
 		}
 
 		{ // apply rotation

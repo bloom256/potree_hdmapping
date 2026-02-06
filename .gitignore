@@ -31,3 +31,11 @@ libs/CesiumUnminified
 /pointclouds/morro_bay_converted
 /pointclouds/helimap_epalinges
 pointclouds/F
+
+# HD mapping data files
+/data
+*.laz
+*.las
+*.copc.laz
+*.csv
+trajectory.json

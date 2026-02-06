@@ -299,7 +299,7 @@ float getSpacing(){
 }
 
 float getPointSizeAttenuation(){
-	return pow(2.0, getLOD());
+	return pow(1.5, getLOD());
 }
 
 

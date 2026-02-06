@@ -48,10 +48,10 @@ void main() {
 	#endif
 	
 	#if defined(circle_point_shape) 
-		float cc = u*u + v*v;
-		if(cc > 1.0){
-			discard;
-		}
+		//float cc = u*u + v*v;
+		//if(cc > 1.0){
+		//	discard;
+		//}
 	#endif
 		
 	#if defined color_type_indices
@@ -88,7 +88,7 @@ void main() {
 
 	#if defined(weighted_splats)
 		float distance = 2.0 * length(gl_PointCoord.xy - 0.5);
-		float weight = max(0.0, 1.0 - distance);
+		float weight = max(0.0, 1.733 - distance);
 		weight = pow(weight, 1.5);
 
 		gl_FragColor.a = weight;
