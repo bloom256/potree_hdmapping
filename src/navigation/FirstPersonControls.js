@@ -191,28 +191,24 @@ export class FirstPersonControls extends EventDispatcher {
 	startRouteFly (positions) {
 		if (!positions || positions.length < 2) return;
 
-		this.stopRouteFly();
-
-		// precompute cumulative arc-length distances
-		let distances = [0];
-		for (let i = 1; i < positions.length; i++) {
-			distances.push(distances[i - 1] + positions[i].distanceTo(positions[i - 1]));
+		// recompute path data only if positions changed
+		if (this.routeFlyPositions !== positions) {
+			let distances = [0];
+			for (let i = 1; i < positions.length; i++) {
+				distances.push(distances[i - 1] + positions[i].distanceTo(positions[i - 1]));
+			}
+			this.routeFlyPositions = positions;
+			this.routeFlyDistances = distances;
+			this.routeFlyTotalLength = distances[distances.length - 1];
+			this.routeFlyDistance = 0;
 		}
 
-		this.routeFlyPositions = positions;
-		this.routeFlyDistances = distances;
-		this.routeFlyTotalLength = distances[distances.length - 1];
-		this.routeFlyDistance = 0;
 		this.routeFlyActive = true;
 	}
 
 	stopRouteFly () {
 		let wasActive = this.routeFlyActive;
 		this.routeFlyActive = false;
-		this.routeFlyPositions = null;
-		this.routeFlyDistances = null;
-		this.routeFlyTotalLength = 0;
-		this.routeFlyDistance = 0;
 		if (wasActive) {
 			this.dispatchEvent({type: 'routefly_stopped'});
 		}
@@ -294,9 +290,10 @@ export class FirstPersonControls extends EventDispatcher {
 			this.routeFlyDistance += this.viewer.getMoveSpeed() * delta;
 
 			if (this.routeFlyDistance >= this.routeFlyTotalLength) {
-				// reached the end
+				// reached the end — reset so next start begins from 0
 				let last = this.routeFlyPositions[this.routeFlyPositions.length - 1];
 				this.scene.view.position.set(last.x, last.y, last.z);
+				this.routeFlyDistance = 0;
 				this.stopRouteFly();
 			} else {
 				// binary search for segment
