@@ -1286,7 +1286,7 @@ export class Sidebar{
 		this.dom.find('#sldFOV').slider({
 			value: this.viewer.getFOV(),
 			min: 20,
-			max: 100,
+			max: 150,
 			step: 1,
 			slide: (event, ui) => { this.viewer.setFOV(ui.value); }
 		});
