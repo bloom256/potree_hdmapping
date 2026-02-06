@@ -54,6 +54,12 @@ export class FirstPersonControls extends EventDispatcher {
 
 		this.tweens = [];
 
+		this.routeFlyActive = false;
+		this.routeFlyPositions = null;
+		this.routeFlyDistances = null;
+		this.routeFlyTotalLength = 0;
+		this.routeFlyDistance = 0;
+
 		let drag = (e) => {
 			if (e.drag.object !== null) {
 				return;
@@ -182,6 +188,36 @@ export class FirstPersonControls extends EventDispatcher {
 		}
 	}
 
+	startRouteFly (positions) {
+		if (!positions || positions.length < 2) return;
+
+		this.stopRouteFly();
+
+		// precompute cumulative arc-length distances
+		let distances = [0];
+		for (let i = 1; i < positions.length; i++) {
+			distances.push(distances[i - 1] + positions[i].distanceTo(positions[i - 1]));
+		}
+
+		this.routeFlyPositions = positions;
+		this.routeFlyDistances = distances;
+		this.routeFlyTotalLength = distances[distances.length - 1];
+		this.routeFlyDistance = 0;
+		this.routeFlyActive = true;
+	}
+
+	stopRouteFly () {
+		let wasActive = this.routeFlyActive;
+		this.routeFlyActive = false;
+		this.routeFlyPositions = null;
+		this.routeFlyDistances = null;
+		this.routeFlyTotalLength = 0;
+		this.routeFlyDistance = 0;
+		if (wasActive) {
+			this.dispatchEvent({type: 'routefly_stopped'});
+		}
+	}
+
 	update (delta) {
 		let view = this.scene.view;
 
@@ -207,6 +243,13 @@ export class FirstPersonControls extends EventDispatcher {
 			let moveUp = this.keys.UP.some(e => ih.pressedKeys[e]);
 			let moveDown = this.keys.DOWN.some(e => ih.pressedKeys[e]);
 
+			if (this.routeFlyActive) {
+				if (moveForward || moveBackward || moveLeft || moveRight || moveUp || moveDown) {
+					this.stopRouteFly();
+				}
+			}
+
+			if (!this.routeFlyActive) {
 			if(this.lockElevation){
 				let dir = view.direction;
 				dir.z = 0;
@@ -244,6 +287,36 @@ export class FirstPersonControls extends EventDispatcher {
 			} else if (moveDown) {
 				this.translationWorldDelta.z = -this.viewer.getMoveSpeed();
 			}
+			}
+		}
+
+		if (this.routeFlyActive) { // advance route fly by moveSpeed
+			this.routeFlyDistance += this.viewer.getMoveSpeed() * delta;
+
+			if (this.routeFlyDistance >= this.routeFlyTotalLength) {
+				// reached the end
+				let last = this.routeFlyPositions[this.routeFlyPositions.length - 1];
+				this.scene.view.position.set(last.x, last.y, last.z);
+				this.stopRouteFly();
+			} else {
+				// binary search for segment
+				let d = this.routeFlyDistance;
+				let dists = this.routeFlyDistances;
+				let lo = 0, hi = dists.length - 2;
+				while (lo < hi) {
+					let mid = (lo + hi + 1) >> 1;
+					if (dists[mid] <= d) lo = mid; else hi = mid - 1;
+				}
+				let segLen = dists[lo + 1] - dists[lo];
+				let frac = segLen > 0 ? (d - dists[lo]) / segLen : 0;
+				let p0 = this.routeFlyPositions[lo];
+				let p1 = this.routeFlyPositions[lo + 1];
+				this.scene.view.position.set(
+					p0.x + (p1.x - p0.x) * frac,
+					p0.y + (p1.y - p0.y) * frac,
+					p0.z + (p1.z - p0.z) * frac
+				);
+			}
 		}
 
 		{ // arrow key rotation
@@ -273,7 +346,7 @@ export class FirstPersonControls extends EventDispatcher {
 			view.pitch = pitch;
 		}
 
-		{ // apply translation
+		if (!this.routeFlyActive) { // apply translation
 			view.translate(
 				this.translationDelta.x * delta,
 				this.translationDelta.y * delta,

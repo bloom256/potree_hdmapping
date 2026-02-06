@@ -46,6 +46,14 @@
 		LMB drag &mdash; Rotate<br>
 		RMB drag &mdash; Pan<br>
 		Scroll &mdash; Speed
+		<div style="margin-top: 6px;">
+			<button id="route_fly_btn" style="
+				pointer-events: auto; cursor: pointer;
+				background: #446; color: #fff; border: 1px solid #668;
+				border-radius: 3px; padding: 4px 10px; font: 12px monospace;
+				display: none;
+			">Route Fly</button>
+		</div>
 	</div>
 
 	<script type="module">
@@ -110,12 +118,20 @@
 					if (!positions || positions.length === 0) return;
 
 					var offset = pointcloud.position;
+					var offsetPositions = [];
 					var vertices = new Float32Array(positions.length * 3);
 					for (var i = 0; i < positions.length; i++) {
 						vertices[i * 3]     = positions[i][0] + offset.x;
 						vertices[i * 3 + 1] = positions[i][1] + offset.y;
 						vertices[i * 3 + 2] = positions[i][2] + offset.z;
+						offsetPositions.push(new THREE.Vector3(
+							positions[i][0] + offset.x,
+							positions[i][1] + offset.y,
+							positions[i][2] + offset.z
+						));
 					}
+
+					window.trajectoryPositions = offsetPositions;
 
 					var geometry = new THREE.BufferGeometry();
 					geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
@@ -125,6 +141,28 @@
 
 					viewer.scene.scene.add(line);
 					console.log("Trajectory loaded: " + positions.length + " points");
+
+					// Show Route Fly button
+					var btn = document.getElementById('route_fly_btn');
+					btn.style.display = 'inline-block';
+
+					var flying = false;
+					btn.addEventListener('click', function() {
+						if (!flying) {
+							viewer.fpControls.startRouteFly(window.trajectoryPositions);
+							btn.textContent = 'Stop Fly';
+							flying = true;
+						} else {
+							viewer.fpControls.stopRouteFly();
+							btn.textContent = 'Route Fly';
+							flying = false;
+						}
+					});
+
+					viewer.fpControls.addEventListener('routefly_stopped', function() {
+						btn.textContent = 'Route Fly';
+						flying = false;
+					});
 				})
 				.catch(function(err) {
 					console.warn("Failed to load trajectory: " + err);
