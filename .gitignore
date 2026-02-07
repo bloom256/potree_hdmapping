@@ -34,6 +34,7 @@ pointclouds/F
 
 # HD mapping data files
 /data
+/potree_converter
 *.laz
 *.las
 *.copc.laz

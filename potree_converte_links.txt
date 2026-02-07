@@ -1,0 +1,4 @@
+https://github.com/potree/PotreeConverter/releases/download/2.1.2/PotreeConverter_2.1.2_x64_linux.zip
+sha256:f4040fc9fb30a42a60a7c86b6ee86706e8ad05100e1ae117b8fa13c717855c97
+https://github.com/potree/PotreeConverter/releases/download/2.1.2/PotreeConverter_2.1.2_x64_windows.zip
+sha256:5f2b5bf0539a84451cafbfa25deeac1ddec3a8c7499fa3d3bdb0414a82d33a59

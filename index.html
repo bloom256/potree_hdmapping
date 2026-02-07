@@ -34,6 +34,15 @@
 		<div id="potree_sidebar_container"> </div>
 	</div>
 
+	<div id="coord_display" style="
+		position: absolute; bottom: 10px; left: 10px; z-index: 1000;
+		background: rgba(0,0,0,0.7); color: #0f0; padding: 6px 10px;
+		border-radius: 4px; font: 13px monospace;
+		cursor: text; user-select: text;
+	">
+		camera coordinate: [-, -, -]
+	</div>
+
 	<div id="controls_hint" style="
 		position: absolute; top: 10px; right: 10px; z-index: 1000;
 		background: rgba(0,0,0,0.6); color: #ccc; padding: 8px 12px;
@@ -45,7 +54,9 @@
 		Space/Shift &mdash; Up/Down<br>
 		LMB drag &mdash; Rotate<br>
 		RMB drag &mdash; Pan<br>
-		Scroll &mdash; Speed
+		Scroll &mdash; Speed<br>
+		DblClick &mdash; Measure<br>
+		Esc &mdash; Clear measure
 		<div style="margin-top: 6px;">
 			<button id="route_fly_btn" style="
 				pointer-events: auto; cursor: pointer;
@@ -68,8 +79,8 @@
 			return decodeURIComponent(results[2].replace(/\+/g, " "));
 		}
 
-		var copcFile = getQueryParam('copc') || 'pointcloud.copc.laz';
-		var trjFile = getQueryParam('trj') || 'trajectory.json';
+		var pcFile = getQueryParam('pc') || 'data/metadata.json';
+		var trjFile = getQueryParam('trj') || '';
 
 		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
 
@@ -88,7 +99,7 @@
 			$("#menu_appearance").next().show();
 		});
 
-		Potree.loadPointCloud(copcFile, "pointcloud", function(e) {
+		Potree.loadPointCloud(pcFile, "pointcloud", function(e) {
 			var pointcloud = e.pointcloud;
 			viewer.scene.addPointCloud(pointcloud);
 
@@ -105,7 +116,87 @@
 			viewer.setControls(viewer.fpControls);
 			viewer.setMoveSpeed(3);
 
+			// Coordinate display
+			var renderArea = document.getElementById('potree_render_area');
+			var coordDisplay = document.getElementById('coord_display');
+			var lastClickedText = '';
+			var markerA = null;
+			var markerB = null;
+			var measureLine = null;
+			var prevPoint = null;
+
+			function makeMarker(color) {
+				var geo = new THREE.SphereGeometry(0.05, 16, 16);
+				var mat = new THREE.MeshBasicMaterial({ color: color });
+				var mesh = new THREE.Mesh(geo, mat);
+				viewer.scene.scene.add(mesh);
+				return mesh;
+			}
+
+			// Double-click to measure point coordinate and distance
+			renderArea.addEventListener('dblclick', function(event) {
+				var rect = renderArea.getBoundingClientRect();
+				var mouse = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+				var result = Potree.Utils.getMousePointCloudIntersection(
+					mouse, viewer.scene.getActiveCamera(), viewer, viewer.scene.pointclouds);
+				if (result) {
+					var p = result.location;
+					lastClickedText = 'clicked coordinate: [' + p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ', ' + p.z.toFixed(3) + ']';
+
+					if (prevPoint) {
+						var dist = prevPoint.distanceTo(p);
+						lastClickedText += '  distance: ' + dist.toFixed(3) + 'm';
+
+						// Move marker B
+						if (!markerB) { markerB = makeMarker(0xff0000); }
+						markerB.position.copy(p);
+
+						// Draw/update line between A and B
+						if (measureLine) { viewer.scene.scene.remove(measureLine); }
+						var lineGeo = new THREE.BufferGeometry().setFromPoints([prevPoint.clone(), p.clone()]);
+						var lineMat = new THREE.LineBasicMaterial({ color: 0xffff00 });
+						measureLine = new THREE.Line(lineGeo, lineMat);
+						viewer.scene.scene.add(measureLine);
+					}
+
+					// Place/move marker A
+					if (!markerA) { markerA = makeMarker(0xff0000); }
+					if (prevPoint) {
+						markerA.position.copy(prevPoint);
+					} else {
+						markerA.position.copy(p);
+					}
+
+					prevPoint = p.clone();
+				}
+			});
+
+			// Escape to clear measurement
+			document.addEventListener('keydown', function(event) {
+				if (event.key === 'Escape') {
+					if (markerA) { viewer.scene.scene.remove(markerA); markerA = null; }
+					if (markerB) { viewer.scene.scene.remove(markerB); markerB = null; }
+					if (measureLine) { viewer.scene.scene.remove(measureLine); measureLine = null; }
+					prevPoint = null;
+					lastClickedText = '';
+				}
+			});
+
+			// Update camera coordinate continuously
+			function updateCoordDisplay() {
+				var cam = viewer.scene.getActiveCamera().position;
+				var html = '';
+				if (lastClickedText) {
+					html += lastClickedText + '<br>';
+				}
+				html += 'camera coordinate: [' + cam.x.toFixed(3) + ', ' + cam.y.toFixed(3) + ', ' + cam.z.toFixed(3) + ']';
+				coordDisplay.innerHTML = html;
+				requestAnimationFrame(updateCoordDisplay);
+			}
+			requestAnimationFrame(updateCoordDisplay);
+
 			// Load trajectory overlay
+			if (!trjFile) return;
 			fetch(trjFile)
 				.then(function(response) {
 					if (!response.ok) {
@@ -117,17 +208,16 @@
 				.then(function(positions) {
 					if (!positions || positions.length === 0) return;
 
-					var offset = pointcloud.position;
 					var offsetPositions = [];
 					var vertices = new Float32Array(positions.length * 3);
 					for (var i = 0; i < positions.length; i++) {
-						vertices[i * 3]     = positions[i][0] + offset.x;
-						vertices[i * 3 + 1] = positions[i][1] + offset.y;
-						vertices[i * 3 + 2] = positions[i][2] + offset.z;
+						vertices[i * 3]     = positions[i][0];
+						vertices[i * 3 + 1] = positions[i][1];
+						vertices[i * 3 + 2] = positions[i][2];
 						offsetPositions.push(new THREE.Vector3(
-							positions[i][0] + offset.x,
-							positions[i][1] + offset.y,
-							positions[i][2] + offset.z
+							positions[i][0],
+							positions[i][1],
+							positions[i][2]
 						));
 					}
 
@@ -141,6 +231,10 @@
 
 					viewer.scene.scene.add(line);
 					console.log("Trajectory loaded: " + positions.length + " points");
+
+					// Start camera at first trajectory point
+					var start = offsetPositions[0];
+					viewer.scene.view.position.set(start.x, start.y, start.z + 2);
 
 					// Show Route Fly button
 					var btn = document.getElementById('route_fly_btn');
