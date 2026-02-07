@@ -11,7 +11,6 @@ Steps:
 
 import csv
 import hashlib
-import http.server
 import json
 import os
 import shutil
@@ -206,7 +205,7 @@ def find_or_download_converter(project_root):
 
 def run_potree_converter(converter_exe, input_laz, output_dir):
     """Run PotreeConverter on a LAZ file."""
-    cmd = [converter_exe, input_laz, "-o", output_dir, "--encoding", "BROTLI"]
+    cmd = [converter_exe, input_laz, "-o", output_dir]
     log(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, check=False)
     if result.returncode != 0:
@@ -340,86 +339,29 @@ def main():
     else:
         log("No trajectory JSON found, opening without trajectory overlay")
 
-    # Start HTTP server
+    # Start Node.js HTTP server with Range support
     port = find_available_port()
-
-    class RangeHandler(http.server.SimpleHTTPRequestHandler):
-        """SimpleHTTPRequestHandler with HTTP Range support for octree.bin."""
-
-        def log_request(self, code="-", size="-"):
-            if self.path == "/favicon.ico":
-                return
-            super().log_request(code, size)
-
-        def handle(self):
-            try:
-                super().handle()
-            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
-                pass
-
-        def do_GET(self):
-            range_header = self.headers.get("Range")
-            if not range_header:
-                return super().do_GET()
-
-            path = self.translate_path(self.path)
-            if not os.path.isfile(path):
-                self.send_error(404)
-                return
-
-            file_size = os.path.getsize(path)
-            try:
-                byte_range = range_header.replace("bytes=", "")
-                parts = byte_range.split("-")
-                start = int(parts[0]) if parts[0] else 0
-                end = int(parts[1]) if parts[1] else file_size - 1
-            except (ValueError, IndexError):
-                self.send_error(416, "Invalid range")
-                return
-
-            if start >= file_size or end >= file_size or start > end:
-                self.send_error(416, "Range not satisfiable")
-                return
-
-            length = end - start + 1
-            ctype = self.guess_type(path)
-
-            self.send_response(206)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(length))
-            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
-            self.send_header("Accept-Ranges", "bytes")
-            self.end_headers()
-
-            with open(path, "rb") as f:
-                f.seek(start)
-                self.wfile.write(f.read(length))
-
-        def end_headers(self):
-            self.send_header("Accept-Ranges", "bytes")
-            super().end_headers()
-
-    server = http.server.ThreadingHTTPServer(("", port), RangeHandler)
-
-    # Serve from project root
-    os.chdir(project_root)
 
     query = urllib.parse.urlencode(params)
     url = f"http://localhost:{port}/index.html?{query}"
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    server_script = os.path.join(script_dir, "server.js")
+
+    log(f"Starting Node.js HTTP server on port {port}")
     log(f"Serving from: {project_root}")
-    log(f"Server URL: http://localhost:{port}/")
     log(f"Viewer URL: {url}")
     log("Opening browser ...")
 
     threading.Timer(0.5, lambda: webbrowser.open(url)).start()
 
-    log("Server running. Press Ctrl+C to stop.")
     try:
-        server.serve_forever()
+        subprocess.run(
+            ["node", server_script, str(port), project_root, url],
+            check=False,
+        )
     except KeyboardInterrupt:
         log("Shutting down server.")
-        server.shutdown()
 
 
 if __name__ == "__main__":
