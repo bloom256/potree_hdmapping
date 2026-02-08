@@ -42,6 +42,7 @@
 	">
 		<div id="clicked_display"></div>
 		<div id="camera_display">camera coordinate: [-, -, -]</div>
+		<div id="flags_display"></div>
 	</div>
 
 	<div id="controls_hint" style="
@@ -59,6 +60,7 @@
 		DblClick &mdash; Teleport<br>
 		MMB &mdash; Pick point<br>
 		MMB drag &mdash; Measure<br>
+		Alt+MMB &mdash; Place flag<br>
 		Esc &mdash; Clear
 		<div style="margin-top: 6px; pointer-events: auto;">
 			<input id="goto_input" type="text" placeholder="x, y, z" style="
@@ -79,6 +81,12 @@
 				border-radius: 3px; padding: 4px 10px; font: 12px monospace;
 				display: none;
 			">Route Fly</button>
+			<button id="copy_flags_btn" style="
+				pointer-events: auto; cursor: pointer;
+				background: #446; color: #fff; border: 1px solid #668;
+				border-radius: 3px; padding: 4px 10px; font: 12px monospace;
+				display: none;
+			">Copy Flags</button>
 		</div>
 	</div>
 
@@ -186,10 +194,15 @@
 			var renderArea = document.getElementById('potree_render_area');
 			var clickedDisplay = document.getElementById('clicked_display');
 			var cameraDisplay = document.getElementById('camera_display');
+			var flagsDisplay = document.getElementById('flags_display');
+			var copyFlagsBtn = document.getElementById('copy_flags_btn');
 			var markerA = null;
 			var markerB = null;
 			var measureLine = null;
 			var prevPoint = null;
+
+			// Flag bookmarks
+			var flags = [];
 
 			function makeMarker(color) {
 				var geo = new THREE.SphereGeometry(0.05, 16, 16);
@@ -207,6 +220,53 @@
 				return result ? result.location : null;
 			}
 
+			function createFlag(position) {
+				var index = flags.length + 1;
+				var group = new THREE.Group();
+
+				var geo = new THREE.SphereGeometry(0.08, 16, 16);
+				var mat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+				var sphere = new THREE.Mesh(geo, mat);
+				group.add(sphere);
+
+				var label = new Potree.TextSprite("" + index);
+				label.setTextColor({r: 255, g: 255, b: 255, a: 1.0});
+				label.setBorderColor({r: 255, g: 0, b: 0, a: 0.8});
+				label.setBackgroundColor({r: 128, g: 0, b: 0, a: 0.6});
+				label.position.set(0, 0.15, 0);
+				group.add(label);
+
+				group.position.copy(position);
+				viewer.scene.scene.add(group);
+
+				flags.push({ position: position.clone(), marker: group, index: index });
+				updateFlagsDisplay();
+			}
+
+			function updateFlagsDisplay() {
+				if (flags.length === 0) {
+					flagsDisplay.textContent = '';
+					copyFlagsBtn.style.display = 'none';
+					return;
+				}
+				var lines = ['Flags: ' + flags.length];
+				for (var i = 0; i < flags.length; i++) {
+					var p = flags[i].position;
+					lines.push(flags[i].index + ': [' + p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ', ' + p.z.toFixed(3) + ']');
+				}
+				flagsDisplay.textContent = lines.join('\n');
+				flagsDisplay.style.whiteSpace = 'pre';
+				copyFlagsBtn.style.display = 'inline-block';
+			}
+
+			function clearFlags() {
+				for (var i = 0; i < flags.length; i++) {
+					viewer.scene.scene.remove(flags[i].marker);
+				}
+				flags = [];
+				updateFlagsDisplay();
+			}
+
 			function clearMeasurement() {
 				if (markerA) { viewer.scene.scene.remove(markerA); markerA = null; }
 				if (markerB) { viewer.scene.scene.remove(markerB); markerB = null; }
@@ -214,14 +274,14 @@
 				clickedDisplay.textContent = '';
 			}
 
-			// MMB click = pick point, MMB drag = measure distance
-			var mmbStart = null;  // {point, screenX, screenY}
+			// MMB click = pick point, MMB drag = measure distance, Alt+MMB = place flag
+			var mmbStart = null;  // {point, screenX, screenY, altKey}
 			renderArea.addEventListener('mousedown', function(event) {
 				if (event.button !== 1) return;
 				event.preventDefault();
 				var p = pickPoint(event);
 				if (!p) return;
-				mmbStart = { point: p.clone(), screenX: event.clientX, screenY: event.clientY };
+				mmbStart = { point: p.clone(), screenX: event.clientX, screenY: event.clientY, altKey: event.altKey };
 			});
 
 			renderArea.addEventListener('mouseup', function(event) {
@@ -230,7 +290,14 @@
 				var dx = event.clientX - mmbStart.screenX;
 				var dy = event.clientY - mmbStart.screenY;
 				var screenDist = Math.sqrt(dx * dx + dy * dy);
+				var wasAlt = mmbStart.altKey;
 				mmbStart = null;
+
+				if (wasAlt && screenDist < 5) {
+					// Alt+MMB click — place flag
+					createFlag(pA);
+					return;
+				}
 
 				if (screenDist < 5) {
 					// Click (no drag) — pick point
@@ -262,10 +329,11 @@
 				}
 			});
 
-			// Escape to clear measurement
+			// Escape to clear measurement and flags
 			document.addEventListener('keydown', function(event) {
 				if (event.key === 'Escape') {
 					clearMeasurement();
+					clearFlags();
 				}
 			});
 
@@ -288,6 +356,19 @@
 			gotoInput.addEventListener('keydown', function(e) {
 				e.stopPropagation();
 				if (e.key === 'Enter') goToCoord();
+			});
+
+			// Copy flags to clipboard
+			copyFlagsBtn.addEventListener('click', function() {
+				if (flags.length === 0) return;
+				var lines = [];
+				for (var i = 0; i < flags.length; i++) {
+					var p = flags[i].position;
+					lines.push(flags[i].index + ': ' + p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ', ' + p.z.toFixed(3));
+				}
+				navigator.clipboard.writeText(lines.join('\n'));
+				copyFlagsBtn.textContent = 'Copied!';
+				setTimeout(function() { copyFlagsBtn.textContent = 'Copy Flags'; }, 1500);
 			});
 
 			// Update camera coordinate continuously
