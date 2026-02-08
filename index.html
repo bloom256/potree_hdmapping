@@ -56,8 +56,10 @@
 		LMB drag &mdash; Rotate<br>
 		RMB drag &mdash; Pan<br>
 		Scroll &mdash; Speed<br>
-		DblClick &mdash; Measure<br>
-		Esc &mdash; Clear measure
+		DblClick &mdash; Teleport<br>
+		MMB &mdash; Pick point<br>
+		MMB drag &mdash; Measure<br>
+		Esc &mdash; Clear
 		<div style="margin-top: 6px; pointer-events: auto;">
 			<input id="goto_input" type="text" placeholder="x, y, z" style="
 				width: 130px; padding: 3px 6px; font: 12px monospace;
@@ -197,53 +199,73 @@
 				return mesh;
 			}
 
-			// Double-click to measure point coordinate and distance
-			renderArea.addEventListener('dblclick', function(event) {
+			function pickPoint(event) {
 				var rect = renderArea.getBoundingClientRect();
 				var mouse = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 				var result = Potree.Utils.getMousePointCloudIntersection(
 					mouse, viewer.scene.getActiveCamera(), viewer, viewer.scene.pointclouds);
-				if (result) {
-					var p = result.location;
-					var clickedText = 'clicked coordinate: [' + p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ', ' + p.z.toFixed(3) + ']';
+				return result ? result.location : null;
+			}
 
-					if (prevPoint) {
-						var dist = prevPoint.distanceTo(p);
-						clickedText += '  distance: ' + dist.toFixed(3) + 'm';
+			function clearMeasurement() {
+				if (markerA) { viewer.scene.scene.remove(markerA); markerA = null; }
+				if (markerB) { viewer.scene.scene.remove(markerB); markerB = null; }
+				if (measureLine) { viewer.scene.scene.remove(measureLine); measureLine = null; }
+				clickedDisplay.textContent = '';
+			}
 
-						// Move marker B
-						if (!markerB) { markerB = makeMarker(0xff0000); }
-						markerB.position.copy(p);
+			// MMB click = pick point, MMB drag = measure distance
+			var mmbStart = null;  // {point, screenX, screenY}
+			renderArea.addEventListener('mousedown', function(event) {
+				if (event.button !== 1) return;
+				event.preventDefault();
+				var p = pickPoint(event);
+				if (!p) return;
+				mmbStart = { point: p.clone(), screenX: event.clientX, screenY: event.clientY };
+			});
 
-						// Draw/update line between A and B
-						if (measureLine) { viewer.scene.scene.remove(measureLine); }
-						var lineGeo = new THREE.BufferGeometry().setFromPoints([prevPoint.clone(), p.clone()]);
-						var lineMat = new THREE.LineBasicMaterial({ color: 0xffff00 });
-						measureLine = new THREE.Line(lineGeo, lineMat);
-						viewer.scene.scene.add(measureLine);
-					}
+			renderArea.addEventListener('mouseup', function(event) {
+				if (event.button !== 1 || !mmbStart) return;
+				var pA = mmbStart.point;
+				var dx = event.clientX - mmbStart.screenX;
+				var dy = event.clientY - mmbStart.screenY;
+				var screenDist = Math.sqrt(dx * dx + dy * dy);
+				mmbStart = null;
 
-					// Place/move marker A
-					if (!markerA) { markerA = makeMarker(0xff0000); }
-					if (prevPoint) {
-						markerA.position.copy(prevPoint);
-					} else {
-						markerA.position.copy(p);
-					}
+				if (screenDist < 5) {
+					// Click (no drag) — pick point
+					clearMeasurement();
+					markerA = makeMarker(0xff0000);
+					markerA.position.copy(pA);
+					clickedDisplay.textContent = 'picked: [' + pA.x.toFixed(3) + ', ' + pA.y.toFixed(3) + ', ' + pA.z.toFixed(3) + ']';
+				} else {
+					// Drag — measure distance
+					var pB = pickPoint(event);
+					if (!pB) return;
 
-					clickedDisplay.textContent = clickedText;
-					prevPoint = p.clone();
+					clearMeasurement();
+					markerA = makeMarker(0xff0000);
+					markerA.position.copy(pA);
+					markerB = makeMarker(0xff0000);
+					markerB.position.copy(pB);
+
+					var lineGeo = new THREE.BufferGeometry().setFromPoints([pA, pB]);
+					var lineMat = new THREE.LineBasicMaterial({ color: 0xffff00 });
+					measureLine = new THREE.Line(lineGeo, lineMat);
+					viewer.scene.scene.add(measureLine);
+
+					var dist = pA.distanceTo(pB);
+					clickedDisplay.textContent =
+						'A: [' + pA.x.toFixed(3) + ', ' + pA.y.toFixed(3) + ', ' + pA.z.toFixed(3) + ']  ' +
+						'B: [' + pB.x.toFixed(3) + ', ' + pB.y.toFixed(3) + ', ' + pB.z.toFixed(3) + ']  ' +
+						'dist: ' + dist.toFixed(3) + 'm';
 				}
 			});
 
-			// Escape to clear measurement, G to go to coordinate
+			// Escape to clear measurement
 			document.addEventListener('keydown', function(event) {
 				if (event.key === 'Escape') {
-					if (markerA) { viewer.scene.scene.remove(markerA); markerA = null; }
-					if (markerB) { viewer.scene.scene.remove(markerB); markerB = null; }
-					if (measureLine) { viewer.scene.scene.remove(measureLine); measureLine = null; }
-					prevPoint = null;
-					clickedDisplay.textContent = '';
+					clearMeasurement();
 				}
 			});
 

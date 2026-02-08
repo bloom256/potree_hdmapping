@@ -40,3 +40,4 @@ pointclouds/F
 *.copc.laz
 *.csv
 trajectory.json
+__pycache__/
