@@ -42,7 +42,35 @@
 	">
 		<div id="clicked_display"></div>
 		<div id="camera_display">camera coordinate: [-, -, -]</div>
-		<div id="flags_display"></div>
+	</div>
+
+	<div id="flags_panel" style="
+		position: absolute; bottom: 80px; left: 10px; z-index: 1000;
+		background: rgba(0,0,0,0.8); color: #0f0;
+		border-radius: 4px; font: 13px monospace;
+		min-width: 260px; display: none;
+	">
+		<div id="flags_panel_header" style="
+			display: flex; justify-content: space-between; align-items: center;
+			padding: 4px 8px; cursor: pointer; user-select: none;
+			background: rgba(60,60,60,0.9); border-radius: 4px 4px 0 0;
+		">
+			<span id="flags_panel_title">Flags (0)</span>
+			<span>
+				<button id="flags_copy_btn" style="
+					cursor: pointer; background: #446; color: #fff;
+					border: 1px solid #668; border-radius: 3px;
+					padding: 2px 8px; font: 11px monospace;
+				">Copy</button>
+				<button id="flags_minimize_btn" style="
+					cursor: pointer; background: #446; color: #fff;
+					border: 1px solid #668; border-radius: 3px;
+					padding: 2px 6px; font: 11px monospace;
+				">_</button>
+			</span>
+		</div>
+		<div id="flags_panel_body" style="padding: 4px 8px; max-height: 200px; overflow-y: auto; display: none;">
+		</div>
 	</div>
 
 	<div id="controls_hint" style="
@@ -61,7 +89,7 @@
 		MMB &mdash; Pick point<br>
 		MMB drag &mdash; Measure<br>
 		Alt+MMB &mdash; Place flag<br>
-		Esc &mdash; Clear
+		Esc &mdash; Clear measurement
 		<div style="margin-top: 6px; pointer-events: auto;">
 			<input id="goto_input" type="text" placeholder="x, y, z" style="
 				width: 130px; padding: 3px 6px; font: 12px monospace;
@@ -81,12 +109,6 @@
 				border-radius: 3px; padding: 4px 10px; font: 12px monospace;
 				display: none;
 			">Route Fly</button>
-			<button id="copy_flags_btn" style="
-				pointer-events: auto; cursor: pointer;
-				background: #446; color: #fff; border: 1px solid #668;
-				border-radius: 3px; padding: 4px 10px; font: 12px monospace;
-				display: none;
-			">Copy Flags</button>
 		</div>
 	</div>
 
@@ -109,6 +131,7 @@
 		var trjFile = getQueryParam('trj') || '';
 		var posesAfterFile = getQueryParam('poses_after_lc') || '';
 		var lcEdgesFile = getQueryParam('lc_edges') || '';
+		var flagsFile = pcFile.replace(/\/[^/]+$/, '/flags.json');
 
 		// Build RGB coordinate axes for an array of poses using fat lines.
 		// poses: [{matrix: [16 floats]}, ...] (row-major 4x4)
@@ -194,14 +217,19 @@
 			var renderArea = document.getElementById('potree_render_area');
 			var clickedDisplay = document.getElementById('clicked_display');
 			var cameraDisplay = document.getElementById('camera_display');
-			var flagsDisplay = document.getElementById('flags_display');
-			var copyFlagsBtn = document.getElementById('copy_flags_btn');
+			var flagsPanel = document.getElementById('flags_panel');
+			var flagsPanelTitle = document.getElementById('flags_panel_title');
+			var flagsPanelBody = document.getElementById('flags_panel_body');
+			var flagsCopyBtn = document.getElementById('flags_copy_btn');
+			var flagsMinimizeBtn = document.getElementById('flags_minimize_btn');
+			var flagsPanelExpanded = false;
 			var markerA = null;
 			var markerB = null;
 			var measureLine = null;
 
-			// Flag bookmarks
-			var flags = [];
+			// Flag bookmarks (persistent)
+			var flagPositions = [];  // array of THREE.Vector3, source of truth
+			var flagMarkers = [];    // array of THREE.Group in scene (derived)
 
 			function makeMarker(color) {
 				var geo = new THREE.SphereGeometry(0.05, 16, 16);
@@ -223,8 +251,7 @@
 				return p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ', ' + p.z.toFixed(3);
 			}
 
-			function createFlag(position) {
-				var index = flags.length + 1;
+			function makeFlagGroup(position, index) {
 				var group = new THREE.Group();
 
 				var geo = new THREE.SphereGeometry(0.08, 16, 16);
@@ -232,7 +259,7 @@
 				var sphere = new THREE.Mesh(geo, mat);
 				group.add(sphere);
 
-				var label = new Potree.TextSprite("" + index);
+				var label = new Potree.TextSprite("" + (index + 1));
 				label.setTextColor({r: 255, g: 255, b: 255, a: 1.0});
 				label.setBorderColor({r: 255, g: 0, b: 0, a: 0.8});
 				label.setBackgroundColor({r: 128, g: 0, b: 0, a: 0.6});
@@ -241,33 +268,110 @@
 
 				group.position.copy(position);
 				viewer.scene.scene.add(group);
-
-				flags.push({ position: position.clone(), marker: group, index: index });
-				updateFlagsDisplay();
+				return group;
 			}
 
-			function updateFlagsDisplay() {
-				if (flags.length === 0) {
-					flagsDisplay.textContent = '';
-					copyFlagsBtn.style.display = 'none';
+			function rebuildFlagMarkers() {
+				for (var i = 0; i < flagMarkers.length; i++) {
+					viewer.scene.scene.remove(flagMarkers[i]);
+				}
+				flagMarkers = [];
+				for (var i = 0; i < flagPositions.length; i++) {
+					flagMarkers.push(makeFlagGroup(flagPositions[i], i));
+				}
+				updateFlagsPanel();
+			}
+
+			function addFlag(position) {
+				flagPositions.push(position.clone());
+				rebuildFlagMarkers();
+				saveFlags();
+				// Auto-expand panel when first flag is placed
+				if (!flagsPanelExpanded) {
+					flagsPanelExpanded = true;
+					flagsPanelBody.style.display = 'block';
+				}
+			}
+
+			function removeFlag(index) {
+				flagPositions.splice(index, 1);
+				rebuildFlagMarkers();
+				saveFlags();
+			}
+
+			function saveFlags() {
+				var data = flagPositions.map(function(p) { return [p.x, p.y, p.z]; });
+				fetch('/save-file?path=' + encodeURIComponent(flagsFile), {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(data),
+				}).catch(function(err) {
+					console.warn('Failed to save flags: ' + err);
+				});
+			}
+
+			function loadFlags() {
+				fetch(flagsFile)
+					.then(function(response) {
+						if (!response.ok) return null;
+						return response.json();
+					})
+					.then(function(data) {
+						if (!data || data.length === 0) return;
+						for (var i = 0; i < data.length; i++) {
+							flagPositions.push(new THREE.Vector3(data[i][0], data[i][1], data[i][2]));
+						}
+						rebuildFlagMarkers();
+						console.log('Loaded ' + data.length + ' flags from ' + flagsFile);
+					})
+					.catch(function() {});
+			}
+
+			function updateFlagsPanel() {
+				if (flagPositions.length === 0) {
+					flagsPanel.style.display = 'none';
+					flagsPanelExpanded = false;
 					return;
 				}
-				var lines = ['Flags: ' + flags.length];
-				for (var i = 0; i < flags.length; i++) {
-					var p = flags[i].position;
-					lines.push(flags[i].index + ': [' + formatCoord(p) + ']');
-				}
-				flagsDisplay.textContent = lines.join('\n');
-				flagsDisplay.style.whiteSpace = 'pre';
-				copyFlagsBtn.style.display = 'inline-block';
-			}
+				flagsPanel.style.display = 'block';
+				flagsPanelTitle.textContent = 'Flags (' + flagPositions.length + ')';
+				flagsPanelBody.innerHTML = '';
+				for (var i = 0; i < flagPositions.length; i++) {
+					(function(idx) {
+						var row = document.createElement('div');
+						row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer;';
+						row.addEventListener('click', function() {
+							var p = flagPositions[idx];
+							viewer.scene.view.position.set(p.x, p.y, p.z);
+						});
 
-			function clearFlags() {
-				for (var i = 0; i < flags.length; i++) {
-					viewer.scene.scene.remove(flags[i].marker);
+						var text = document.createElement('span');
+						text.style.cssText = 'flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+						text.textContent = (idx + 1) + ': [' + formatCoord(flagPositions[idx]) + ']';
+						row.appendChild(text);
+
+						var goBtn = document.createElement('button');
+						goBtn.textContent = 'Go';
+						goBtn.style.cssText = 'cursor:pointer; background:#446; color:#fff; border:1px solid #668; border-radius:3px; padding:1px 6px; font:11px monospace;';
+						goBtn.addEventListener('click', function(e) {
+							e.stopPropagation();
+							var p = flagPositions[idx];
+							viewer.scene.view.position.set(p.x, p.y, p.z);
+						});
+						row.appendChild(goBtn);
+
+						var removeBtn = document.createElement('button');
+						removeBtn.textContent = 'X';
+						removeBtn.style.cssText = 'cursor:pointer; background:#644; color:#fff; border:1px solid #866; border-radius:3px; padding:1px 6px; font:11px monospace;';
+						removeBtn.addEventListener('click', function(e) {
+							e.stopPropagation();
+							removeFlag(idx);
+						});
+						row.appendChild(removeBtn);
+
+						flagsPanelBody.appendChild(row);
+					})(i);
 				}
-				flags = [];
-				updateFlagsDisplay();
 			}
 
 			function clearMeasurement() {
@@ -277,7 +381,8 @@
 				clickedDisplay.textContent = '';
 			}
 
-			// MMB click = pick point, MMB drag = measure distance, Alt+MMB = place flag
+			// MMB click = pick point, MMB drag = measure distance,
+			// Alt+MMB = place flag
 			var mmbStart = null;  // {point, screenX, screenY, altKey}
 			renderArea.addEventListener('mousedown', function(event) {
 				if (event.button !== 1) return;
@@ -298,7 +403,7 @@
 
 				if (wasAlt && screenDist < 5) {
 					// Alt+MMB click — place flag
-					createFlag(pA);
+					addFlag(pA);
 					return;
 				}
 
@@ -332,11 +437,10 @@
 				}
 			});
 
-			// Escape to clear measurement and flags
+			// Escape to clear measurement
 			document.addEventListener('keydown', function(event) {
 				if (event.key === 'Escape') {
 					clearMeasurement();
-					clearFlags();
 				}
 			});
 
@@ -361,18 +465,32 @@
 				if (e.key === 'Enter') goToCoord();
 			});
 
-			// Copy flags to clipboard
-			copyFlagsBtn.addEventListener('click', function() {
-				if (flags.length === 0) return;
+			// Flags panel: copy to clipboard
+			flagsCopyBtn.addEventListener('click', function(e) {
+				e.stopPropagation();
+				if (flagPositions.length === 0) return;
 				var lines = [];
-				for (var i = 0; i < flags.length; i++) {
-					var p = flags[i].position;
-					lines.push(flags[i].index + ': ' + formatCoord(p));
+				for (var i = 0; i < flagPositions.length; i++) {
+					lines.push((i + 1) + ': ' + formatCoord(flagPositions[i]));
 				}
 				navigator.clipboard.writeText(lines.join('\n'));
-				copyFlagsBtn.textContent = 'Copied!';
-				setTimeout(function() { copyFlagsBtn.textContent = 'Copy Flags'; }, 1500);
+				flagsCopyBtn.textContent = 'Copied!';
+				setTimeout(function() { flagsCopyBtn.textContent = 'Copy'; }, 1500);
 			});
+
+			// Flags panel: minimize/expand toggle
+			function toggleFlagsPanel() {
+				flagsPanelExpanded = !flagsPanelExpanded;
+				flagsPanelBody.style.display = flagsPanelExpanded ? 'block' : 'none';
+			}
+			flagsMinimizeBtn.addEventListener('click', function(e) {
+				e.stopPropagation();
+				toggleFlagsPanel();
+			});
+			document.getElementById('flags_panel_header').addEventListener('click', toggleFlagsPanel);
+
+			// Load persisted flags
+			loadFlags();
 
 			// Update camera coordinate continuously
 			function updateCameraDisplay() {

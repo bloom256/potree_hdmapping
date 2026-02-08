@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const PORT = parseInt(process.argv[2]);
 const ROOT = process.argv[3];
-const URL = process.argv[4];
+const OPEN_URL = process.argv[4];
 
 const MIME = {
     '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
@@ -12,8 +12,34 @@ const MIME = {
     '.wasm': 'application/wasm', '.ico': 'image/x-icon',
 };
 
+function handleSaveFile(req, res) {
+    const parsed = new URL(req.url, `http://localhost:${PORT}`);
+    const savePath = parsed.searchParams.get('path') || '';
+
+    if (!savePath.startsWith('data/') || !savePath.endsWith('.json') || savePath.includes('..')) {
+        res.writeHead(400);
+        res.end('Invalid path');
+        return;
+    }
+
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+        const filePath = path.join(ROOT, savePath);
+        fs.writeFileSync(filePath, body, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('OK');
+    });
+}
+
 const server = http.createServer((req, res) => {
     const urlPath = decodeURIComponent(req.url.split('?')[0]);
+
+    if (req.method === 'POST' && urlPath === '/save-file') {
+        handleSaveFile(req, res);
+        return;
+    }
+
     const filePath = path.join(ROOT, urlPath);
 
     if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
@@ -60,6 +86,6 @@ function serveFile(filePath, req, res) {
 server.listen(PORT, () => {
     console.log(`[server] Serving from: ${ROOT}`);
     console.log(`[server] http://localhost:${PORT}/`);
-    console.log(`[server] ${URL}`);
+    console.log(`[server] ${OPEN_URL}`);
     console.log('[server] Press Ctrl+C to stop.');
 });
