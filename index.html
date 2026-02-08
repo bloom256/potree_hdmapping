@@ -177,7 +177,7 @@
 			var pointcloud = e.pointcloud;
 			viewer.scene.addPointCloud(pointcloud);
 
-			let material = pointcloud.material;
+			var material = pointcloud.material;
 			material.activeAttributeName = "intensity gradient";
 			material.gradient = Potree.Gradients.VIRIDIS;
 			material.intensityGamma = 0.3;
@@ -199,7 +199,6 @@
 			var markerA = null;
 			var markerB = null;
 			var measureLine = null;
-			var prevPoint = null;
 
 			// Flag bookmarks
 			var flags = [];
@@ -218,6 +217,10 @@
 				var result = Potree.Utils.getMousePointCloudIntersection(
 					mouse, viewer.scene.getActiveCamera(), viewer, viewer.scene.pointclouds);
 				return result ? result.location : null;
+			}
+
+			function formatCoord(p) {
+				return p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ', ' + p.z.toFixed(3);
 			}
 
 			function createFlag(position) {
@@ -252,7 +255,7 @@
 				var lines = ['Flags: ' + flags.length];
 				for (var i = 0; i < flags.length; i++) {
 					var p = flags[i].position;
-					lines.push(flags[i].index + ': [' + p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ', ' + p.z.toFixed(3) + ']');
+					lines.push(flags[i].index + ': [' + formatCoord(p) + ']');
 				}
 				flagsDisplay.textContent = lines.join('\n');
 				flagsDisplay.style.whiteSpace = 'pre';
@@ -304,7 +307,7 @@
 					clearMeasurement();
 					markerA = makeMarker(0xff0000);
 					markerA.position.copy(pA);
-					clickedDisplay.textContent = 'picked: [' + pA.x.toFixed(3) + ', ' + pA.y.toFixed(3) + ', ' + pA.z.toFixed(3) + ']';
+					clickedDisplay.textContent = 'picked: [' + formatCoord(pA) + ']';
 				} else {
 					// Drag — measure distance
 					var pB = pickPoint(event);
@@ -323,8 +326,8 @@
 
 					var dist = pA.distanceTo(pB);
 					clickedDisplay.textContent =
-						'A: [' + pA.x.toFixed(3) + ', ' + pA.y.toFixed(3) + ', ' + pA.z.toFixed(3) + ']  ' +
-						'B: [' + pB.x.toFixed(3) + ', ' + pB.y.toFixed(3) + ', ' + pB.z.toFixed(3) + ']  ' +
+						'A: [' + formatCoord(pA) + ']  ' +
+						'B: [' + formatCoord(pB) + ']  ' +
 						'dist: ' + dist.toFixed(3) + 'm';
 				}
 			});
@@ -364,7 +367,7 @@
 				var lines = [];
 				for (var i = 0; i < flags.length; i++) {
 					var p = flags[i].position;
-					lines.push(flags[i].index + ': ' + p.x.toFixed(3) + ', ' + p.y.toFixed(3) + ', ' + p.z.toFixed(3));
+					lines.push(flags[i].index + ': ' + formatCoord(p));
 				}
 				navigator.clipboard.writeText(lines.join('\n'));
 				copyFlagsBtn.textContent = 'Copied!';
@@ -374,7 +377,7 @@
 			// Update camera coordinate continuously
 			function updateCameraDisplay() {
 				var cam = viewer.scene.getActiveCamera().position;
-				cameraDisplay.textContent = 'camera coordinate: [' + cam.x.toFixed(3) + ', ' + cam.y.toFixed(3) + ', ' + cam.z.toFixed(3) + ']';
+				cameraDisplay.textContent = 'camera coordinate: [' + formatCoord(cam) + ']';
 				requestAnimationFrame(updateCameraDisplay);
 			}
 			requestAnimationFrame(updateCameraDisplay);

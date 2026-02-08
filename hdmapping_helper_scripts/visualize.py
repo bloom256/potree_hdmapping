@@ -10,7 +10,6 @@ Steps:
 """
 
 import argparse
-import csv
 import hashlib
 import json
 import os
@@ -26,6 +25,7 @@ import zipfile
 
 # Add script directory to path for sibling imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from convert_trajectory_csv import parse_trajectory_csv, trajectory_to_json
 from parse_poses import parse_poses_file, poses_to_json
 from parse_session import parse_lc_edges, edges_to_json
 
@@ -45,35 +45,6 @@ def find_available_port(start=8080):
             except OSError:
                 continue
     raise RuntimeError("No available port found")
-
-
-def convert_trajectory_csv(csv_path, output_path):
-    """Convert trajectory CSV to JSON array of [x, y, z] positions."""
-    log(f"Reading trajectory CSV: {csv_path}")
-    positions = []
-    skipped = 0
-    with open(csv_path, "r", newline="") as f:
-        reader = csv.reader(f)
-        for row_num, row in enumerate(reader, start=1):
-            if len(row) < 4:
-                skipped += 1
-                continue
-            try:
-                x = float(row[1])
-                y = float(row[2])
-                z = float(row[3])
-            except (ValueError, IndexError):
-                skipped += 1
-                continue
-            positions.append([x, y, z])
-
-    if skipped:
-        log(f"Skipped {skipped} unparseable rows")
-
-    log(f"Writing {len(positions)} trajectory positions to {output_path}")
-    with open(output_path, "w") as f:
-        json.dump(positions, f, separators=(",", ":"))
-    log(f"Trajectory JSON written ({os.path.getsize(output_path)} bytes)")
 
 
 def parse_converter_links(links_path):
@@ -337,18 +308,23 @@ def main():
         os.makedirs(dataset_dir, exist_ok=True)
 
     if not skip_conversion:
-        # Convert trajectory CSV if provided
-        if csv_path:
-            trj_output = os.path.join(dataset_dir, "trajectory.json")
-            convert_trajectory_csv(csv_path, trj_output)
-
         # Find or download PotreeConverter
         converter_exe = find_or_download_converter(project_root)
 
         # Run PotreeConverter
         run_potree_converter(converter_exe, input_laz, dataset_dir)
     else:
-        log("Skipping conversion (reusing existing data)")
+        log("Skipping point cloud conversion (reusing existing data)")
+
+    # Convert trajectory CSV to JSON if provided
+    if csv_path:
+        trj_output = os.path.join(dataset_dir, "trajectory.json")
+        log(f"Converting trajectory CSV: {csv_path}")
+        positions, skipped = parse_trajectory_csv(csv_path)
+        if skipped:
+            log(f"  Skipped {skipped} unparseable rows")
+        trajectory_to_json(positions, trj_output)
+        log(f"Trajectory JSON written: {trj_output} ({len(positions)} positions)")
 
     # Convert poses after LC text file to JSON if provided
     if poses_after_lc:
