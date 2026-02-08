@@ -83,6 +83,9 @@
 	<script type="module">
 
 	import * as THREE from "./libs/three.js/build/three.module.js";
+	import {LineSegmentsGeometry} from "./libs/three.js/lines/LineSegmentsGeometry.js";
+	import {LineSegments2} from "./libs/three.js/lines/LineSegments2.js";
+	import {LineMaterial} from "./libs/three.js/lines/LineMaterial.js";
 
 		var getQueryParam = function(name) {
 			name = name.replace(/[\[\]]/g, "\\$&");
@@ -94,6 +97,53 @@
 
 		var pcFile = getQueryParam('pc') || 'data/metadata.json';
 		var trjFile = getQueryParam('trj') || '';
+		var posesAfterFile = getQueryParam('poses_after_lc') || '';
+		var lcEdgesFile = getQueryParam('lc_edges') || '';
+
+		// Build RGB coordinate axes for an array of poses using fat lines.
+		// poses: [{matrix: [16 floats]}, ...] (row-major 4x4)
+		// size: axis length in world units
+		// Returns a THREE.Group with 3 LineSegments2 children (R, G, B).
+		function buildPoseAxes(poses, size) {
+			var axisConfigs = [
+				{ color: 0xff0000, col: [0, 4, 8]  },  // X axis — Red
+				{ color: 0x00ff00, col: [1, 5, 9]  },  // Y axis — Green
+				{ color: 0x0000ff, col: [2, 6, 10] },  // Z axis — Blue
+			];
+
+			var group = new THREE.Group();
+
+			for (var a = 0; a < axisConfigs.length; a++) {
+				var cfg = axisConfigs[a];
+				var positions = new Float32Array(poses.length * 6); // 2 verts * 3 components per pose
+
+				for (var i = 0; i < poses.length; i++) {
+					var m = poses[i].matrix;
+					var px = m[3], py = m[7], pz = m[11];
+					var dx = m[cfg.col[0]], dy = m[cfg.col[1]], dz = m[cfg.col[2]];
+					var base = i * 6;
+					positions[base]     = px;
+					positions[base + 1] = py;
+					positions[base + 2] = pz;
+					positions[base + 3] = px + dx * size;
+					positions[base + 4] = py + dy * size;
+					positions[base + 5] = pz + dz * size;
+				}
+
+				var geometry = new LineSegmentsGeometry();
+				geometry.setPositions(positions);
+
+				var mat = new LineMaterial({
+					color: cfg.color,
+					linewidth: 2,
+					resolution: new THREE.Vector2(1000, 1000),
+				});
+
+				group.add(new LineSegments2(geometry, mat));
+			}
+
+			return group;
+		}
 
 		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
 
@@ -225,6 +275,114 @@
 				requestAnimationFrame(updateCameraDisplay);
 			}
 			requestAnimationFrame(updateCameraDisplay);
+
+			// Load poses (before and after loop closure)
+			function fetchPoses(url, label) {
+				if (!url) return Promise.resolve(null);
+				return fetch(url)
+					.then(function(response) {
+						if (!response.ok) {
+							console.warn("Poses file not found: " + url);
+							return null;
+						}
+						return response.json();
+					})
+					.then(function(poses) {
+						if (!poses || poses.length === 0) return null;
+						console.log(label + " loaded: " + poses.length + " poses");
+						return poses;
+					})
+					.catch(function(err) {
+						console.warn("Failed to load " + label + ": " + err);
+						return null;
+					});
+			}
+
+			// Build filename → position lookup from a poses array
+			function buildPosePositionMap(poses) {
+				var map = {};
+				for (var i = 0; i < poses.length; i++) {
+					var m = poses[i].matrix;
+					map[poses[i].filename] = new THREE.Vector3(m[3], m[7], m[11]);
+				}
+				return map;
+			}
+
+			// Draw dashed lines between edge pairs using pose positions,
+			// with numbered labels at each edge midpoint.
+			function drawLCEdges(edges, posMap) {
+				var positions = [];
+				var midpoints = [];  // {index, midpoint} for labels
+				var skipped = 0;
+				for (var i = 0; i < edges.length; i++) {
+					var pFrom = posMap[edges[i].from];
+					var pTo = posMap[edges[i].to];
+					if (!pFrom || !pTo) { skipped++; continue; }
+					positions.push(pFrom.x, pFrom.y, pFrom.z, pTo.x, pTo.y, pTo.z);
+					midpoints.push({
+						index: i,
+						pos: new THREE.Vector3(
+							(pFrom.x + pTo.x) / 2,
+							(pFrom.y + pTo.y) / 2,
+							(pFrom.z + pTo.z) / 2)
+					});
+				}
+				if (skipped > 0) {
+					console.warn("LC edges: skipped " + skipped + " edges (pose not found)");
+				}
+				if (positions.length === 0) return;
+
+				var geometry = new LineSegmentsGeometry();
+				geometry.setPositions(new Float32Array(positions));
+
+				var mat = new LineMaterial({
+					color: 0xffff00,
+					linewidth: 2,
+					resolution: new THREE.Vector2(1000, 1000),
+				});
+				mat.dashed = true;
+				mat.defines.USE_DASH = '';
+				mat.needsUpdate = true;
+				mat.dashScale = 10;
+				mat.dashSize = 0.5;
+				mat.gapSize = 0.2;
+
+				var lines = new LineSegments2(geometry, mat);
+				lines.computeLineDistances();
+				viewer.scene.scene.add(lines);
+
+				// Add numbered labels at edge midpoints
+				for (var j = 0; j < midpoints.length; j++) {
+					var label = new Potree.TextSprite("" + midpoints[j].index);
+					label.setTextColor({r: 255, g: 255, b: 0, a: 1.0});
+					label.setBorderColor({r: 0, g: 0, b: 0, a: 0.8});
+					label.setBackgroundColor({r: 0, g: 0, b: 0, a: 0.5});
+					label.position.copy(midpoints[j].pos);
+					viewer.scene.scene.add(label);
+				}
+
+				console.log("LC edges drawn: " + midpoints.length + " edges with labels");
+			}
+
+			var posesAfterPromise = fetchPoses(posesAfterFile, "Poses after LC");
+			var edgesPromise = (!lcEdgesFile) ? Promise.resolve(null) :
+				fetch(lcEdgesFile).then(function(r) {
+					if (!r.ok) { console.warn("LC edges file not found: " + lcEdgesFile); return null; }
+					return r.json();
+				}).catch(function(err) { console.warn("Failed to load LC edges: " + err); return null; });
+
+			Promise.all([posesAfterPromise, edgesPromise]).then(function(results) {
+				var posesAfter = results[0];
+				var edges = results[1];
+				if (posesAfter) {
+					viewer.scene.scene.add(buildPoseAxes(posesAfter, 0.3));
+				}
+				if (edges && edges.length > 0 && posesAfter) {
+					drawLCEdges(edges, buildPosePositionMap(posesAfter));
+				} else if (edges && !posesAfter) {
+					console.warn("LC edges loaded but no poses_after_lc to resolve positions");
+				}
+			});
 
 			// Load trajectory overlay
 			if (!trjFile) return;

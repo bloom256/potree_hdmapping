@@ -1,151 +1,153 @@
 # Visualize HD Mapping Data
 
-This guide covers the end-to-end workflow for visualizing LAS/LAZ point clouds with trajectory overlays using the Potree-based viewer.
+This guide covers the end-to-end workflow for visualizing LAS/LAZ point clouds with trajectory overlays and loop closure poses using the Potree-based viewer.
 
 ## Prerequisites
 
 - **Node.js** and **npm**
 - **Python 3** (stdlib only, no pip packages)
-- **Docker** (for COPC conversion)
 
 ## Quick Start
 
 ```bash
-# 1. Build the viewer
-npm install && npm run build
+# Full pipeline: point cloud + trajectory + poses + LC edges
+python hdmapping_helper_scripts/visualize.py --laz scan.laz --trajectory_csv trajectory.csv --poses_after_lc poses.txt --lc_edges_session session-alc.mjs
 
-# 2. Convert your point cloud to COPC format
-python hdmapping_helper_scripts/convert_las_to_copc.py scan.laz
-# -> scan.copc.laz
+# Point cloud + trajectory + poses (no edges)
+python hdmapping_helper_scripts/visualize.py --laz scan.laz --trajectory_csv trajectory.csv --poses_after_lc poses.txt
 
-# 3. Convert your trajectory CSV
-python hdmapping_helper_scripts/convert_trajectory_csv.py trajectory.csv
-# -> trajectory.json
-
-# 4. Open in browser (using outputs from steps 2 and 3)
-python hdmapping_helper_scripts/visualize.py scan.copc.laz trajectory.json
-```
-
-## Step-by-Step
-
-### 1. Build Potree
-
-```bash
-npm install
-npm run build
-```
-
-This generates the `build/` directory required by the viewer.
-
-### 2. Convert Point Cloud to COPC
-
-```
-Usage: python hdmapping_helper_scripts/convert_las_to_copc.py <input.laz> [output.copc.laz]
-```
-
-Converts a LAS or LAZ file to COPC (Cloud Optimized Point Cloud) format using Docker PDAL.
-
-- Output defaults to `<input>.copc.laz` (e.g. `scan.laz` becomes `scan.copc.laz`).
-- Uses 1mm scale (0.001) for maximum precision.
-- Skips conversion if the output file already exists. Delete the output file to force re-conversion.
-- Requires Docker with the `pdal/pdal:2.9.0` image (pulled automatically on first run).
-
-Example:
-
-```bash
-python hdmapping_helper_scripts/convert_las_to_copc.py data/scan.laz
-# -> data/scan.copc.laz
-
-python hdmapping_helper_scripts/convert_las_to_copc.py data/scan.laz output/my_cloud.copc.laz
-# -> output/my_cloud.copc.laz
-```
-
-### 3. Convert Trajectory CSV
-
-```
-Usage: python hdmapping_helper_scripts/convert_trajectory_csv.py <trajectory.csv> [output.json]
-```
-
-Converts a trajectory CSV file to a JSON array of `[x, y, z]` positions.
-
-- Input CSV must have **no header**. Expected columns: `timestamp,x,y,z,qx,qy,qz,qw`.
-- Only the x, y, z columns (indices 1-3) are extracted.
-- Output defaults to `<input>.json` (e.g. `trajectory.csv` becomes `trajectory.json`).
-- Skips conversion if the output file already exists. Delete the output file to force re-conversion.
-- Rows that fail to parse are skipped with a warning on stderr.
-
-Example:
-
-```bash
-python hdmapping_helper_scripts/convert_trajectory_csv.py data/trajectory.csv
-# -> data/trajectory.json
-
-python hdmapping_helper_scripts/convert_trajectory_csv.py data/my_survey.csv
-# -> data/my_survey.json
-
-python hdmapping_helper_scripts/convert_trajectory_csv.py data/trajectory.csv output/trj.json
-# -> output/trj.json
-```
-
-### 4. Launch the Viewer
-
-```
-Usage: python hdmapping_helper_scripts/visualize.py <pointcloud.copc.laz> [trajectory.json]
-```
-
-Starts a local HTTP server and opens the viewer in your default browser.
-
-- The trajectory argument is optional. Without it, only the point cloud is shown.
-- The server runs until you press Ctrl+C.
-- Uses port 8080 by default (falls back to the next available port).
-
-Example:
-
-```bash
-# Point cloud with trajectory
-python hdmapping_helper_scripts/visualize.py scan.copc.laz trajectory.json
+# Point cloud + trajectory only
+python hdmapping_helper_scripts/visualize.py --laz scan.laz --trajectory_csv trajectory.csv
 
 # Point cloud only
-python hdmapping_helper_scripts/visualize.py scan.copc.laz
+python hdmapping_helper_scripts/visualize.py --laz scan.laz
 ```
 
-### Alternative: Manual Server
+On first run, PotreeConverter is auto-downloaded and the viewer is built automatically (`npm install && npm run build`).
 
-If you prefer to use the Potree dev server:
+## What `visualize.py` Does
+
+```
+Usage: python hdmapping_helper_scripts/visualize.py --laz <input.laz> [--trajectory_csv <trajectory.csv>] [--poses_after_lc <poses.txt>] [--lc_edges_session <session.mjs>]
+```
+
+1. Builds Potree viewer if needed (`npm install` + `npm run build`)
+2. Derives dataset name from LAZ filename (e.g. `scan_001.laz` → `scan_001`)
+3. Downloads PotreeConverter (if not already present) and converts LAZ to Potree format in `data/<dataset>/`
+4. Converts trajectory CSV to `data/<dataset>/trajectory.json` (if provided)
+5. Converts poses text file to `data/<dataset>/poses_after_lc.json` (if provided)
+6. Extracts LC edges from session `.mjs` to `data/<dataset>/lc_edges.json` (if provided)
+7. Starts a local HTTP server and opens the viewer in the default browser
+
+Arguments:
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--laz` | Yes | Input LAS/LAZ point cloud file |
+| `--trajectory_csv` | No | Trajectory CSV file (no header; columns: `timestamp,x,y,z,qx,qy,qz,qw`) |
+| `--poses_after_lc` | No | Poses after loop closure text file (see format below) |
+| `--lc_edges_session` | No | Session `.mjs` file to extract loop closure edges from |
+
+If `data/<dataset>/` already exists, the script prompts to reuse or overwrite.
+
+## Input File Formats
+
+### Trajectory CSV
+
+No header. Columns: `timestamp,x,y,z,qx,qy,qz,qw`. Only x, y, z (columns 1-3) are used.
+
+```
+1609459200.0,100.5,200.3,50.1,0,0,0,1
+1609459200.1,100.6,200.4,50.1,0,0,0,1
+```
+
+### Poses Text File
+
+4x4 transformation matrices indexed by point cloud filename:
+
+```
+2
+scan_001.laz
+1 0 0 100.5
+0 1 0 200.3
+0 0 1 50.1
+0 0 0 1
+scan_002.laz
+0.999 0.01 0 101.2
+-0.01 0.999 0 200.8
+0 0 1 50.2
+0 0 0 1
+```
+
+First line is the number of poses. Each pose has a filename line followed by 4 rows of the 4x4 matrix.
+
+## Standalone Helper Scripts
+
+### convert_trajectory_csv.py
 
 ```bash
-npm start
-# Open: http://localhost:1234/index.html?copc=scan.copc.laz&trj=trajectory.json
+python hdmapping_helper_scripts/convert_trajectory_csv.py trajectory.csv [output.json]
+# -> trajectory.json
 ```
+
+### parse_poses.py
+
+```bash
+python hdmapping_helper_scripts/parse_poses.py poses.txt [output.json]
+# -> poses.json
+```
+
+### parse_session.py
+
+```bash
+python hdmapping_helper_scripts/parse_session.py session-alc.mjs [output.json]
+# -> session-alc_edges.json
+```
+
+Extracts `loop_closure_edges` from a session `.mjs` file, mapping `index_from`/`index_to` to laz filenames.
 
 ## Viewer Controls
 
-The viewer opens with these defaults:
-
 | Setting | Default |
 |---------|---------|
-| Navigation | Helicopter mode (Earth controls) |
+| Navigation | First-person (helicopter mode) |
 | Point coloring | Intensity |
 | Eye-Dome Lighting | On |
 | Point size | Adaptive |
 
-The trajectory is rendered as a **red line** overlaid on the point cloud.
+| Control | Action |
+|---------|--------|
+| WASD | Move |
+| Arrows | Look |
+| Space/Shift | Up/Down |
+| LMB drag | Rotate |
+| RMB drag | Pan |
+| Scroll | Speed |
+| DblClick | Measure |
+| Esc | Clear measurement |
+| Route Fly button | Fly along trajectory (scroll = speed, WASD = cancel) |
 
-## Query Parameters
+## Viewer Query Parameters
 
-The viewer accepts URL query parameters:
+| Parameter | Description |
+|-----------|-------------|
+| `pc` | Path to Potree `metadata.json` |
+| `trj` | Path to `trajectory.json` |
+| `poses_after_lc` | Path to `poses_after_lc.json` |
+| `lc_edges` | Path to `lc_edges.json` |
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `copc` | `pointcloud.copc.laz` | COPC file to load |
-| `trj` | `trajectory.json` | Trajectory JSON file |
+## Visualization
+
+- **Trajectory**: red line along all positions
+- **Poses after LC**: RGB coordinate axes at each pose (Red=X, Green=Y, Blue=Z, 0.3m length)
+- **LC edges**: dashed yellow lines connecting pose pairs, with numbered labels at midpoints
 
 ## Troubleshooting
 
-**Docker not found** -- Ensure Docker is installed and running. The COPC conversion script requires it.
+**Point cloud doesn't load** -- Check the browser console. Verify `metadata.json`, `octree.bin`, and `hierarchy.bin` exist in the dataset directory.
 
-**Point cloud doesn't load** -- Verify the file is in COPC format (`.copc.laz`). Standard LAZ files must be converted first.
+**Trajectory not visible** -- The trajectory coordinates must be in the same coordinate system as the point cloud. Check the browser console for warnings.
 
-**Trajectory not visible** -- Check the browser console for warnings. The trajectory coordinates must be in the same coordinate system as the point cloud. If the trajectory file is missing, the viewer continues without it.
+**Port already in use** -- `visualize.py` automatically tries the next available port starting from 8080.
 
-**Port already in use** -- `visualize.py` automatically tries the next available port. If using `npm start`, the default port 1234 must be free.
+**PotreeConverter download fails** -- Check your internet connection. The download URLs and SHA256 hashes are in `potree_converte_links.txt`.

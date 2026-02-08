@@ -9,6 +9,7 @@ Steps:
 3. Starts a local HTTP server and opens the viewer in a browser
 """
 
+import argparse
 import csv
 import hashlib
 import json
@@ -22,6 +23,11 @@ import urllib.parse
 import urllib.request
 import webbrowser
 import zipfile
+
+# Add script directory to path for sibling imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from parse_poses import parse_poses_file, poses_to_json
+from parse_session import parse_lc_edges, edges_to_json
 
 
 def log(msg):
@@ -249,18 +255,31 @@ def ensure_potree_built(project_root):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <input.laz> [trajectory.csv]", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Convert LAZ + trajectory CSV and open in the Potree viewer.",
+    )
+    parser.add_argument("--laz", required=True, help="Input LAZ file")
+    parser.add_argument("--trajectory_csv", help="Trajectory CSV file")
+    parser.add_argument("--poses_after_lc",
+                        help="Poses after loop closure file")
+    parser.add_argument("--lc_edges_session",
+                        help="Session .mjs file (loop closure edges)")
+    args = parser.parse_args()
 
-    input_laz = os.path.abspath(sys.argv[1])
-    csv_path = os.path.abspath(sys.argv[2]) if len(sys.argv) >= 3 else None
+    input_laz = os.path.abspath(args.laz)
+    csv_path = os.path.abspath(args.trajectory_csv) if args.trajectory_csv else None
+    poses_after_lc = os.path.abspath(args.poses_after_lc) if args.poses_after_lc else None
+    lc_edges_session = os.path.abspath(args.lc_edges_session) if args.lc_edges_session else None
 
     log(f"Input LAZ: {input_laz}")
     if csv_path:
         log(f"Input CSV: {csv_path}")
     else:
         log("No trajectory CSV provided")
+    if poses_after_lc:
+        log(f"Poses after LC: {poses_after_lc}")
+    if lc_edges_session:
+        log(f"LC edges session: {lc_edges_session}")
 
     if not os.path.isfile(input_laz):
         print(f"Error: LAZ file not found: {input_laz}", file=sys.stderr)
@@ -268,6 +287,14 @@ def main():
 
     if csv_path and not os.path.isfile(csv_path):
         print(f"Error: trajectory CSV not found: {csv_path}", file=sys.stderr)
+        sys.exit(1)
+
+    if poses_after_lc and not os.path.isfile(poses_after_lc):
+        print(f"Error: poses after LC file not found: {poses_after_lc}", file=sys.stderr)
+        sys.exit(1)
+
+    if lc_edges_session and not os.path.isfile(lc_edges_session):
+        print(f"Error: session file not found: {lc_edges_session}", file=sys.stderr)
         sys.exit(1)
 
     # Project root is one level up from this script
@@ -323,6 +350,24 @@ def main():
     else:
         log("Skipping conversion (reusing existing data)")
 
+    # Convert poses after LC text file to JSON if provided
+    if poses_after_lc:
+        poses_dest = os.path.join(dataset_dir, "poses_after_lc.json")
+        log(f"Parsing poses: {poses_after_lc}")
+        poses = parse_poses_file(poses_after_lc)
+        log(f"  Found {len(poses)} poses")
+        poses_to_json(poses, poses_dest)
+        log(f"Poses JSON written: {poses_dest} ({os.path.getsize(poses_dest)} bytes)")
+
+    # Extract loop closure edges from session file if provided
+    if lc_edges_session:
+        edges_dest = os.path.join(dataset_dir, "lc_edges.json")
+        log(f"Parsing LC edges from session: {lc_edges_session}")
+        edges = parse_lc_edges(lc_edges_session)
+        log(f"  Found {len(edges)} loop closure edges")
+        edges_to_json(edges, edges_dest)
+        log(f"Edges JSON written: {edges_dest} ({os.path.getsize(edges_dest)} bytes)")
+
     # Build URL params
     metadata_rel = f"data/{dataset_name}/metadata.json"
     metadata_abs = os.path.join(dataset_dir, "metadata.json")
@@ -338,6 +383,18 @@ def main():
         params["trj"] = trj_rel
     else:
         log("No trajectory JSON found, opening without trajectory overlay")
+
+    for param_key, json_name in [
+        ("poses_after_lc", "poses_after_lc.json"),
+        ("lc_edges", "lc_edges.json"),
+    ]:
+        abs_path = os.path.join(dataset_dir, json_name)
+        if os.path.isfile(abs_path):
+            rel_path = f"data/{dataset_name}/{json_name}"
+            log(f"{param_key} JSON found: {abs_path}")
+            params[param_key] = rel_path
+        else:
+            log(f"No {param_key} JSON found")
 
     # Start Node.js HTTP server with Range support
     port = find_available_port()
