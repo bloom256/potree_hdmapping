@@ -97,17 +97,24 @@ export class FirstPersonControls extends EventDispatcher {
 		};
 
 		let scroll = (e) => {
-			let speed = this.viewer.getMoveSpeed();
+			if (e.altKey) {
+				// Alt+scroll: zoom forward/backward along view direction
+				let dir = this.scene.view.direction;
+				let step = this.viewer.getMoveSpeed() * e.delta * 0.5;
+				this.scene.view.position.add(dir.clone().multiplyScalar(step));
+			} else {
+				let speed = this.viewer.getMoveSpeed();
 
-			if (e.delta < 0) {
-				speed = speed * 0.9;
-			} else if (e.delta > 0) {
-				speed = speed / 0.9;
+				if (e.delta < 0) {
+					speed = speed * 0.9;
+				} else if (e.delta > 0) {
+					speed = speed / 0.9;
+				}
+
+				speed = Math.max(speed, 0.1);
+
+				this.viewer.setMoveSpeed(speed);
 			}
-
-			speed = Math.max(speed, 0.1);
-
-			this.viewer.setMoveSpeed(speed);
 		};
 
 		let dblclick = (e) => {

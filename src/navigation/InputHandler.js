@@ -508,14 +508,16 @@ export class InputHandler extends EventDispatcher {
 			this.hoveredElement.object.dispatchEvent({
 				type: 'mousewheel',
 				delta: ndelta,
-				object: this.hoveredElement.object
+				object: this.hoveredElement.object,
+				altKey: e.altKey
 			});
 		} else {
 			for (let inputListener of this.getSortedListeners()) {
 				inputListener.dispatchEvent({
 					type: 'mousewheel',
 					delta: ndelta,
-					object: null
+					object: null,
+					altKey: e.altKey
 				});
 			}
 		}
