@@ -327,6 +327,14 @@
 					.catch(function() {});
 			}
 
+			function flyToFlag(position) {
+				var view = viewer.scene.view;
+				var dir = view.direction.clone().multiplyScalar(-1);
+				var offset = Math.max(0.2, view.radius);
+				var camTarget = position.clone().add(dir.multiplyScalar(offset));
+				view.setView(camTarget, position, 600);
+			}
+
 			function updateFlagsPanel() {
 				if (flagPositions.length === 0) {
 					flagsPanel.style.display = 'none';
@@ -342,7 +350,7 @@
 						row.style.cssText = 'display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer;';
 						row.addEventListener('click', function() {
 							var p = flagPositions[idx];
-							viewer.scene.view.position.set(p.x, p.y, p.z);
+							flyToFlag(p);
 						});
 
 						var text = document.createElement('span');
@@ -356,7 +364,7 @@
 						goBtn.addEventListener('click', function(e) {
 							e.stopPropagation();
 							var p = flagPositions[idx];
-							viewer.scene.view.position.set(p.x, p.y, p.z);
+							flyToFlag(p);
 						});
 						row.appendChild(goBtn);
 
