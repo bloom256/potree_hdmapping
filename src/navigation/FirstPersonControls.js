@@ -83,7 +83,12 @@ export class FirstPersonControls extends EventDispatcher {
 				this.pitchDelta += ndrag.y * this.rotationSpeed;
 			} else if (e.drag.mouse === MOUSE.RIGHT) {
 				this.translationDelta.x -= ndrag.x * moveSpeed * 1500;
-				this.translationDelta.z += ndrag.y * moveSpeed * 1500;
+				// Forward/back: flatten view direction to ground plane
+				let dir = this.scene.view.direction;
+				let flat = new THREE.Vector3(dir.x, dir.y, 0).normalize();
+				let panScale = ndrag.y * moveSpeed * 1500;
+				this.translationWorldDelta.x += flat.x * panScale;
+				this.translationWorldDelta.y += flat.y * panScale;
 			}
 		};
 
