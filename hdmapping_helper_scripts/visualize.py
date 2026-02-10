@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Convert LAZ + trajectory CSV and open in the Potree viewer.
 
-Usage: python visualize.py <input.laz> [trajectory.csv]
+Usage:
+  Import mode:  python visualize.py --laz input.laz [--trajectory_csv t.csv] [--poses_after_lc p.txt] [--lc_edges_session s.mjs]
+  Open mode:    python visualize.py --dataset <name>
 
-Steps:
-1. Converts LAZ to classic Potree DB via PotreeConverter (auto-downloaded)
-2. Converts trajectory CSV to JSON (if provided)
-3. Starts a local HTTP server and opens the viewer in a browser
+Import mode converts inputs and opens the viewer.
+Open mode opens an existing dataset from data/<name>/ without conversion.
 """
 
 import argparse
@@ -225,18 +225,32 @@ def ensure_potree_built(project_root):
     log("Potree build complete")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Convert LAZ + trajectory CSV and open in the Potree viewer.",
-    )
-    parser.add_argument("--laz", required=True, help="Input LAZ file")
-    parser.add_argument("--trajectory_csv", help="Trajectory CSV file")
-    parser.add_argument("--poses_after_lc",
-                        help="Poses after loop closure file")
-    parser.add_argument("--lc_edges_session",
-                        help="Session .mjs file (loop closure edges)")
-    args = parser.parse_args()
+def open_dataset(dataset_name, project_root):
+    """Open an existing dataset from data/<dataset_name>/."""
+    dataset_dir = os.path.join(project_root, "data", dataset_name)
+    if not os.path.isdir(dataset_dir):
+        print(f"Error: dataset not found: {dataset_dir}", file=sys.stderr)
+        available = []
+        data_dir = os.path.join(project_root, "data")
+        if os.path.isdir(data_dir):
+            for name in sorted(os.listdir(data_dir)):
+                if os.path.isdir(os.path.join(data_dir, name)):
+                    available.append(name)
+        if available:
+            print(f"Available datasets: {', '.join(available)}", file=sys.stderr)
+        sys.exit(1)
 
+    metadata = os.path.join(dataset_dir, "metadata.json")
+    if not os.path.isfile(metadata):
+        print(f"Error: metadata.json not found in {dataset_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    log(f"Opening existing dataset: {dataset_name}")
+    return dataset_dir
+
+
+def import_dataset(args, project_root):
+    """Import a new dataset from LAZ + optional CSV/poses/edges files."""
     input_laz = os.path.abspath(args.laz)
     csv_path = os.path.abspath(args.trajectory_csv) if args.trajectory_csv else None
     poses_after_lc = os.path.abspath(args.poses_after_lc) if args.poses_after_lc else None
@@ -267,13 +281,6 @@ def main():
     if lc_edges_session and not os.path.isfile(lc_edges_session):
         print(f"Error: session file not found: {lc_edges_session}", file=sys.stderr)
         sys.exit(1)
-
-    # Project root is one level up from this script
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log(f"Project root: {project_root}")
-
-    # Build Potree viewer if needed
-    ensure_potree_built(project_root)
 
     # Derive dataset name from LAZ filename
     dataset_name = os.path.splitext(os.path.basename(input_laz))[0]
@@ -343,6 +350,40 @@ def main():
         log(f"  Found {len(edges)} loop closure edges")
         edges_to_json(edges, edges_dest)
         log(f"Edges JSON written: {edges_dest} ({os.path.getsize(edges_dest)} bytes)")
+
+    return dataset_dir
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Convert LAZ + trajectory CSV and open in the Potree viewer.",
+    )
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dataset", help="Open an existing dataset from data/<name>/")
+    mode.add_argument("--laz", help="Input LAZ file (import mode)")
+    parser.add_argument("--trajectory_csv", help="Trajectory CSV file")
+    parser.add_argument("--poses_after_lc",
+                        help="Poses after loop closure file")
+    parser.add_argument("--lc_edges_session",
+                        help="Session .mjs file (loop closure edges)")
+    args = parser.parse_args()
+
+    if args.dataset and (args.trajectory_csv or args.poses_after_lc or args.lc_edges_session):
+        parser.error("--dataset cannot be combined with --trajectory_csv, --poses_after_lc, or --lc_edges_session")
+
+    # Project root is one level up from this script
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    log(f"Project root: {project_root}")
+
+    # Build Potree viewer if needed
+    ensure_potree_built(project_root)
+
+    if args.dataset:
+        dataset_dir = open_dataset(args.dataset, project_root)
+        dataset_name = args.dataset
+    else:
+        dataset_dir = import_dataset(args, project_root)
+        dataset_name = os.path.basename(dataset_dir)
 
     # Build URL params
     metadata_rel = f"data/{dataset_name}/metadata.json"
