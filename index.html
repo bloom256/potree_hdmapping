@@ -331,9 +331,10 @@
 			function flyToFlag(position) {
 				var view = viewer.scene.view;
 				var dir = view.direction.clone().multiplyScalar(-1);
-				var offset = Math.max(0.2, view.radius);
-				var camTarget = position.clone().add(dir.multiplyScalar(offset));
-				view.setView(camTarget, position, 600);
+				var camTarget = position.clone().add(dir.multiplyScalar(2));
+				view.setView(camTarget, position, 600, function() {
+					viewer.setMoveSpeed(3);
+				});
 			}
 
 			function updateFlagsPanel() {
