@@ -1783,17 +1783,21 @@ export class Viewer extends EventDispatcher{
 			controls.setScene(scene);
 			controls.update(delta);
 
+			// Compose camera orientation: yaw around world Z, then pitch, then roll around forward
+			let camQ = new THREE.Quaternion()
+				.setFromAxisAngle(new THREE.Vector3(0, 0, 1), this.scene.view.yaw);
+			camQ.multiply(new THREE.Quaternion()
+				.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2 + this.scene.view.pitch));
+			camQ.multiply(new THREE.Quaternion()
+				.setFromAxisAngle(new THREE.Vector3(0, 0, -1), this.scene.view.roll));
+
 			if(typeof debugDisabled === "undefined" ){
 				this.scene.cameraP.position.copy(scene.view.position);
-				this.scene.cameraP.rotation.order = "ZXY";
-				this.scene.cameraP.rotation.x = Math.PI / 2 + this.scene.view.pitch;
-				this.scene.cameraP.rotation.z = this.scene.view.yaw;
+				this.scene.cameraP.quaternion.copy(camQ);
 			}
 
 			this.scene.cameraO.position.copy(scene.view.position);
-			this.scene.cameraO.rotation.order = "ZXY";
-			this.scene.cameraO.rotation.x = Math.PI / 2 + this.scene.view.pitch;
-			this.scene.cameraO.rotation.z = this.scene.view.yaw;
+			this.scene.cameraO.quaternion.copy(camQ);
 		}
 		
 		camera.updateMatrix();

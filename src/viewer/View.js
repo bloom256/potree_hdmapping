@@ -6,6 +6,7 @@ export class View{
 
 		this.yaw = Math.PI / 4;
 		this._pitch = -Math.PI / 4;
+		this.roll = 0;
 		this.radius = 1;
 
 		this.maxPitch = Math.PI / 2;
@@ -16,6 +17,7 @@ export class View{
 		let c = new View();
 		c.yaw = this.yaw;
 		c._pitch = this.pitch;
+		c.roll = this.roll;
 		c.radius = this.radius;
 		c.maxPitch = this.maxPitch;
 		c.minPitch = this.minPitch;

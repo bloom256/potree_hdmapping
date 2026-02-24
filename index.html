@@ -81,6 +81,7 @@
 	">
 		WASD &mdash; Move<br>
 		Arrows &mdash; Look<br>
+		Q/E &mdash; Roll &ensp; R &mdash; Level<br>
 		Space/Shift &mdash; Up/Down<br>
 		LMB drag &mdash; Rotate<br>
 		RMB drag &mdash; Pan<br>
@@ -110,6 +111,9 @@
 				border-radius: 3px; padding: 4px 10px; font: 12px monospace;
 				display: none;
 			">Route Fly</button>
+		</div>
+		<div id="roll_display" style="margin-top: 4px; color: #fa0; display: none;">
+			Roll: 0&deg;
 		</div>
 	</div>
 
@@ -502,10 +506,20 @@
 			// Load persisted flags
 			loadFlags();
 
-			// Update camera coordinate continuously
+			// Update camera coordinate and roll display continuously
+			let rollDisplay = document.getElementById('roll_display');
 			function updateCameraDisplay() {
 				var cam = viewer.scene.getActiveCamera().position;
 				cameraDisplay.textContent = 'camera coordinate: [' + formatCoord(cam) + ']';
+
+				let rollDeg = Math.round(viewer.scene.view.roll * 180 / Math.PI);
+				if (rollDeg !== 0) {
+					rollDisplay.textContent = 'Roll: ' + rollDeg + '\u00B0';
+					rollDisplay.style.display = '';
+				} else {
+					rollDisplay.style.display = 'none';
+				}
+
 				requestAnimationFrame(updateCameraDisplay);
 			}
 			requestAnimationFrame(updateCameraDisplay);

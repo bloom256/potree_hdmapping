@@ -43,12 +43,16 @@ export class FirstPersonControls extends EventDispatcher {
 			ROT_LEFT: [37],  // arrow left
 			ROT_RIGHT: [39], // arrow right
 			ROT_UP: [38],    // arrow up
-			ROT_DOWN: [40]   // arrow down
+			ROT_DOWN: [40],  // arrow down
+			ROLL_LEFT: ['Q'.charCodeAt(0)],
+			ROLL_RIGHT: ['E'.charCodeAt(0)],
+			ROLL_RESET: ['R'.charCodeAt(0)]
 		};
 
 		this.fadeFactor = 50;
 		this.yawDelta = 0;
 		this.pitchDelta = 0;
+		this.rollDelta = 0;
 		this.translationDelta = new THREE.Vector3(0, 0, 0);
 		this.translationWorldDelta = new THREE.Vector3(0, 0, 0);
 
@@ -134,6 +138,7 @@ export class FirstPersonControls extends EventDispatcher {
 	stop(){
 		this.yawDelta = 0;
 		this.pitchDelta = 0;
+		this.rollDelta = 0;
 		this.translationDelta.set(0, 0, 0);
 	}
 	
@@ -228,6 +233,8 @@ export class FirstPersonControls extends EventDispatcher {
 
 	update (delta) {
 		let view = this.scene.view;
+		// Flip yaw, pitch, and lateral movement when rolled past 90° (upside-down)
+		let rollFlip = Math.cos(view.roll) >= 0 ? 1 : -1;
 
 		{ // cancel move animations on user input
 			let changes = [ this.yawDelta,
@@ -328,13 +335,15 @@ export class FirstPersonControls extends EventDispatcher {
 			}
 		}
 
-		{ // arrow key rotation
+		{ // arrow key rotation + Q/E roll
 			let ih = this.viewer.inputHandler;
 
 			let rotLeft = this.keys.ROT_LEFT.some(e => ih.pressedKeys[e]);
 			let rotRight = this.keys.ROT_RIGHT.some(e => ih.pressedKeys[e]);
 			let rotUp = this.keys.ROT_UP.some(e => ih.pressedKeys[e]);
 			let rotDown = this.keys.ROT_DOWN.some(e => ih.pressedKeys[e]);
+			let rollLeft = this.keys.ROLL_LEFT.some(e => ih.pressedKeys[e]);
+			let rollRight = this.keys.ROLL_RIGHT.some(e => ih.pressedKeys[e]);
 
 			let arrowRotSpeed = 0.5;
 
@@ -342,22 +351,31 @@ export class FirstPersonControls extends EventDispatcher {
 			if (rotRight) this.yawDelta += arrowRotSpeed;
 			if (rotUp) this.pitchDelta -= arrowRotSpeed;
 			if (rotDown) this.pitchDelta += arrowRotSpeed;
+			if (rollLeft) this.rollDelta -= arrowRotSpeed;
+			if (rollRight) this.rollDelta += arrowRotSpeed;
+
+			let rollReset = this.keys.ROLL_RESET.some(e => ih.pressedKeys[e]);
+			if (rollReset) {
+				view.roll = 0;
+				this.rollDelta = 0;
+			}
 		}
 
 		{ // apply rotation
 			let yaw = view.yaw;
 			let pitch = view.pitch;
 
-			yaw -= this.yawDelta * delta;
-			pitch -= this.pitchDelta * delta;
+			yaw -= this.yawDelta * delta * rollFlip;
+			pitch -= this.pitchDelta * delta * rollFlip;
 
 			view.yaw = yaw;
 			view.pitch = pitch;
+			view.roll -= this.rollDelta * delta;
 		}
 
 		if (!this.routeFlyActive) { // apply translation
 			view.translate(
-				this.translationDelta.x * delta,
+				this.translationDelta.x * delta * rollFlip,
 				this.translationDelta.y * delta,
 				this.translationDelta.z * delta
 			);
@@ -365,7 +383,7 @@ export class FirstPersonControls extends EventDispatcher {
 			view.translateWorld(
 				this.translationWorldDelta.x * delta,
 				this.translationWorldDelta.y * delta,
-				this.translationWorldDelta.z * delta
+				this.translationWorldDelta.z * delta * rollFlip
 			);
 		}
 
@@ -377,6 +395,7 @@ export class FirstPersonControls extends EventDispatcher {
 			let attenuation = Math.max(0, 1 - this.fadeFactor * delta);
 			this.yawDelta *= attenuation;
 			this.pitchDelta *= attenuation;
+			this.rollDelta *= attenuation;
 			this.translationDelta.multiplyScalar(attenuation);
 			this.translationWorldDelta.multiplyScalar(attenuation);
 		}
