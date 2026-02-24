@@ -380,13 +380,17 @@ export function updateVisibility(pointclouds, camera, renderer){
 					weight = Number.MAX_VALUE;
 				}
 			} else {
-				// TODO ortho visibility
-				let bb = child.getBoundingBox();				
-				let distance = child.getBoundingSphere().center.distanceTo(camObjPos);
-				let diagonal = bb.max.clone().sub(bb.min).length();
-				//weight = diagonal / distance;
+				// Orthographic: screen-space size based on frustum width
+				let sphere = child.getBoundingSphere();
+				let radius = sphere.radius;
+				let frustumSize = camera.right - camera.left;
+				let screenPixelRadius = radius / frustumSize * domWidth;
 
-				weight = diagonal;
+				if(screenPixelRadius < pointcloud.minimumNodePixelSize){
+					continue;
+				}
+
+				weight = screenPixelRadius;
 			}
 
 			priorityQueue.push({pointcloud: element.pointcloud, node: child, parent: node, weight: weight});

@@ -91,7 +91,9 @@
 		MMB &mdash; Pick point<br>
 		MMB drag &mdash; Measure<br>
 		Alt+MMB &mdash; Place flag<br>
-		Esc &mdash; Clear measurement
+		Esc &mdash; Clear measurement<br>
+		M &mdash; Minimap<br>
+		Minimap DblClick &mdash; Teleport
 		<div style="margin-top: 6px; pointer-events: auto;">
 			<input id="goto_input" type="text" placeholder="x, y, z" style="
 				width: 130px; padding: 3px 6px; font: 12px monospace;
@@ -455,6 +457,9 @@
 			document.addEventListener('keydown', function(event) {
 				if (event.key === 'Escape') {
 					clearMeasurement();
+				}
+				if (event.key === 'm' || event.key === 'M') {
+					viewer.minimap.enabled = !viewer.minimap.enabled;
 				}
 			});
 

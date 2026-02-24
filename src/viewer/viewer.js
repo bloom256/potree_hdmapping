@@ -1,6 +1,6 @@
 
 import * as THREE from "../../libs/three.js/build/three.module.js";
-import {ClipTask, ClipMethod, CameraMode, LengthUnits, ElevationGradientRepeat} from "../defines.js";
+import {ClipTask, ClipMethod, CameraMode, LengthUnits, ElevationGradientRepeat, PointSizeType} from "../defines.js";
 import {Renderer} from "../PotreeRenderer.js";
 import {PotreeRenderer} from "./PotreeRenderer.js";
 import {EDLRenderer} from "./EDLRenderer.js";
@@ -34,6 +34,7 @@ import { ClassificationScheme } from "../materials/ClassificationScheme.js";
 import { VRButton } from '../../libs/three.js/extra/VRButton.js';
 
 import JSON5 from "../../libs/json5-2.1.3/json5.mjs";
+import {Minimap} from "./Minimap.js";
 
 
 export class Viewer extends EventDispatcher{
@@ -214,8 +215,9 @@ export class Viewer extends EventDispatcher{
 				-1000, 1000
 			);
 		}
-		
+
 		this.pRenderer = new Renderer(this.renderer);
+		this.minimap = new Minimap(this);
 		
 		{
 			let near = 2.5;
@@ -2113,6 +2115,7 @@ export class Viewer extends EventDispatcher{
 		pRenderer.clear();
 
 		pRenderer.render(this.renderer);
+		this.minimap.render();
 		this.renderer.render(this.overlay, this.overlayCamera);
 	}
 	
