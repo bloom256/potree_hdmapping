@@ -182,7 +182,7 @@ def find_or_download_converter(project_root):
 
 def run_potree_converter(converter_exe, input_laz, output_dir):
     """Run PotreeConverter on a LAZ file."""
-    cmd = [converter_exe, input_laz, "-o", output_dir]
+    cmd = [converter_exe, input_laz, "-o", output_dir, "--encoding", "BROTLI"]
     log(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, check=False)
     if result.returncode != 0:
