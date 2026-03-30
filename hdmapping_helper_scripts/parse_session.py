@@ -8,7 +8,7 @@ Usage standalone:
     python parse_session.py <session.mjs> [output.json]
 
 Output JSON:
-    [{"from": "scan_lio_403.laz", "to": "scan_lio_428.laz"}, ...]
+    [{"from": "scan_lio_403.laz", "to": "scan_lio_428.laz", "from_index": 403, "to_index": 428}, ...]
 """
 
 import json
@@ -20,7 +20,7 @@ def parse_lc_edges(path):
     """Parse loop closure edges from a session .mjs file.
 
     Returns:
-        list of {"from": str, "to": str}  (basenames of laz files)
+        list of {"from": str, "to": str, "from_index": int, "to_index": int}
     """
     with open(path, "r") as f:
         session = json.load(f)
@@ -44,7 +44,10 @@ def parse_lc_edges(path):
 
         name_from = os.path.basename(laz_files[idx_from]["file_name"])
         name_to = os.path.basename(laz_files[idx_to]["file_name"])
-        edges.append({"from": name_from, "to": name_to})
+        edges.append({
+            "from": name_from, "to": name_to,
+            "from_index": idx_from, "to_index": idx_to,
+        })
 
     return edges
 

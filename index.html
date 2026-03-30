@@ -573,7 +573,7 @@
 					if (!pFrom || !pTo) { skipped++; continue; }
 					positions.push(pFrom.x, pFrom.y, pFrom.z, pTo.x, pTo.y, pTo.z);
 					midpoints.push({
-						index: i,
+						edge: edges[i],
 						pos: new THREE.Vector3(
 							(pFrom.x + pTo.x) / 2,
 							(pFrom.y + pTo.y) / 2,
@@ -606,7 +606,8 @@
 
 				// Add numbered labels at edge midpoints
 				for (var j = 0; j < midpoints.length; j++) {
-					var label = new Potree.TextSprite("" + midpoints[j].index);
+					var e = midpoints[j].edge;
+					var label = new Potree.TextSprite(e.from_index + "-" + e.to_index);
 					label.setTextColor({r: 255, g: 255, b: 0, a: 1.0});
 					label.setBorderColor({r: 0, g: 0, b: 0, a: 0.8});
 					label.setBackgroundColor({r: 0, g: 0, b: 0, a: 0.5});
