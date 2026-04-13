@@ -251,7 +251,32 @@
 				var mouse = { x: event.clientX - rect.left, y: event.clientY - rect.top };
 				var result = Potree.Utils.getMousePointCloudIntersection(
 					mouse, viewer.scene.getActiveCamera(), viewer, viewer.scene.pointclouds);
-				return result ? result.location : null;
+				return result ? { location: result.location, attributes: result.point } : null;
+			}
+
+			function formatAttribute(value) {
+				if (value == null) return String(value);
+				if (value instanceof Float32Array || value instanceof Float64Array ||
+					value instanceof Uint32Array || value instanceof Int32Array ||
+					value instanceof Uint16Array || value instanceof Int16Array ||
+					value instanceof Uint8Array || value instanceof Int8Array ||
+					Array.isArray(value)) {
+					return '[' + Array.from(value).map(formatAttribute).join(', ') + ']';
+				}
+				if (typeof value === 'number') {
+					return Number.isInteger(value) ? String(value) : value.toFixed(3);
+				}
+				return String(value);
+			}
+
+			function formatPointAttributes(attrs) {
+				if (!attrs) return '';
+				var lines = [];
+				for (var key in attrs) {
+					if (key === 'position') continue;
+					lines.push(key + ': ' + formatAttribute(attrs[key]));
+				}
+				return lines.join('  ');
 			}
 
 			function formatCoord(p) {
@@ -405,12 +430,13 @@
 				event.preventDefault();
 				var p = pickPoint(event);
 				if (!p) return;
-				mmbStart = { point: p.clone(), screenX: event.clientX, screenY: event.clientY, altKey: event.altKey };
+				mmbStart = { point: p.location.clone(), attributes: p.attributes, screenX: event.clientX, screenY: event.clientY, altKey: event.altKey };
 			});
 
 			renderArea.addEventListener('mouseup', function(event) {
 				if (event.button !== 1 || !mmbStart) return;
 				var pA = mmbStart.point;
+				var attrsA = mmbStart.attributes;
 				var dx = event.clientX - mmbStart.screenX;
 				var dy = event.clientY - mmbStart.screenY;
 				var screenDist = Math.sqrt(dx * dx + dy * dy);
@@ -428,11 +454,14 @@
 					clearMeasurement();
 					markerA = makeMarker(0xff0000);
 					markerA.position.copy(pA);
-					clickedDisplay.textContent = 'picked: [' + formatCoord(pA) + ']';
+					var attrText = formatPointAttributes(attrsA);
+					clickedDisplay.textContent = 'picked: [' + formatCoord(pA) + ']' +
+						(attrText ? '  ' + attrText : '');
 				} else {
 					// Drag — measure distance
-					var pB = pickPoint(event);
-					if (!pB) return;
+					var pickB = pickPoint(event);
+					if (!pickB) return;
+					var pB = pickB.location;
 
 					clearMeasurement();
 					markerA = makeMarker(0xff0000);
