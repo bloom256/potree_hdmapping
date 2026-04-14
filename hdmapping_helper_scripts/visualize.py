@@ -34,6 +34,23 @@ def log(msg):
     print(f"[visualize] {msg}")
 
 
+def strip_laz_extensions(filename):
+    """Strip .laz/.las and optional .copc suffix from a filename."""
+    name = os.path.splitext(filename)[0]
+    if name.endswith(".copc"):
+        name = name[:-5]
+    return name
+
+
+def convert_poses_file(src, dest, label):
+    """Parse a poses text file and write the JSON form to *dest*."""
+    log(f"Parsing poses ({label}): {src}")
+    poses = parse_poses_file(src)
+    log(f"  Found {len(poses)} poses")
+    poses_to_json(poses, dest)
+    log(f"Poses JSON written: {dest} ({os.path.getsize(dest)} bytes)")
+
+
 def find_available_port(start=8080):
     """Find an available port starting from *start*."""
     for port in range(start, start + 100):
@@ -254,6 +271,7 @@ def import_dataset(args, project_root):
     input_laz = os.path.abspath(args.laz)
     csv_path = os.path.abspath(args.trajectory_csv) if args.trajectory_csv else None
     poses_after_lc = os.path.abspath(args.poses_after_lc) if args.poses_after_lc else None
+    poses_before_lc = os.path.abspath(args.poses_before_lc) if args.poses_before_lc else None
     lc_edges_session = os.path.abspath(args.lc_edges_session) if args.lc_edges_session else None
 
     log(f"Input LAZ: {input_laz}")
@@ -263,6 +281,8 @@ def import_dataset(args, project_root):
         log("No trajectory CSV provided")
     if poses_after_lc:
         log(f"Poses after LC: {poses_after_lc}")
+    if poses_before_lc:
+        log(f"Poses before LC: {poses_before_lc}")
     if lc_edges_session:
         log(f"LC edges session: {lc_edges_session}")
 
@@ -278,16 +298,20 @@ def import_dataset(args, project_root):
         print(f"Error: poses after LC file not found: {poses_after_lc}", file=sys.stderr)
         sys.exit(1)
 
+    if poses_before_lc and not os.path.isfile(poses_before_lc):
+        print(f"Error: poses before LC file not found: {poses_before_lc}", file=sys.stderr)
+        sys.exit(1)
+
     if lc_edges_session and not os.path.isfile(lc_edges_session):
         print(f"Error: session file not found: {lc_edges_session}", file=sys.stderr)
         sys.exit(1)
 
-    # Derive dataset name from LAZ filename
-    dataset_name = os.path.splitext(os.path.basename(input_laz))[0]
-    # Strip extra extensions like .copc
-    if dataset_name.endswith(".copc"):
-        dataset_name = dataset_name[:-5]
-    log(f"Dataset name: {dataset_name}")
+    if args.dataset_name:
+        dataset_name = args.dataset_name
+        log(f"Dataset name (from --dataset_name): {dataset_name}")
+    else:
+        dataset_name = strip_laz_extensions(os.path.basename(input_laz))
+        log(f"Dataset name (from LAZ filename): {dataset_name}")
 
     dataset_dir = os.path.join(project_root, "data", dataset_name)
     log(f"Dataset directory: {dataset_dir}")
@@ -333,14 +357,15 @@ def import_dataset(args, project_root):
         trajectory_to_json(positions, trj_output)
         log(f"Trajectory JSON written: {trj_output} ({len(positions)} positions)")
 
-    # Convert poses after LC text file to JSON if provided
     if poses_after_lc:
-        poses_dest = os.path.join(dataset_dir, "poses_after_lc.json")
-        log(f"Parsing poses: {poses_after_lc}")
-        poses = parse_poses_file(poses_after_lc)
-        log(f"  Found {len(poses)} poses")
-        poses_to_json(poses, poses_dest)
-        log(f"Poses JSON written: {poses_dest} ({os.path.getsize(poses_dest)} bytes)")
+        convert_poses_file(poses_after_lc,
+                           os.path.join(dataset_dir, "poses_after_lc.json"),
+                           "after LC")
+
+    if poses_before_lc:
+        convert_poses_file(poses_before_lc,
+                           os.path.join(dataset_dir, "poses_before_lc.json"),
+                           "before LC")
 
     # Extract loop closure edges from session file if provided
     if lc_edges_session:
@@ -361,15 +386,19 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dataset", help="Open an existing dataset from data/<name>/")
     mode.add_argument("--laz", help="Input LAZ file (import mode)")
+    parser.add_argument("--dataset_name",
+                        help="Override dataset name (default: derived from LAZ filename)")
     parser.add_argument("--trajectory_csv", help="Trajectory CSV file")
     parser.add_argument("--poses_after_lc",
                         help="Poses after loop closure file")
+    parser.add_argument("--poses_before_lc",
+                        help="Poses before loop closure file (rendered as smaller axes linked to after poses)")
     parser.add_argument("--lc_edges_session",
                         help="Session .mjs file (loop closure edges)")
     args = parser.parse_args()
 
-    if args.dataset and (args.trajectory_csv or args.poses_after_lc or args.lc_edges_session):
-        parser.error("--dataset cannot be combined with --trajectory_csv, --poses_after_lc, or --lc_edges_session")
+    if args.dataset and (args.trajectory_csv or args.poses_after_lc or args.poses_before_lc or args.lc_edges_session or args.dataset_name):
+        parser.error("--dataset cannot be combined with --dataset_name, --trajectory_csv, --poses_after_lc, --poses_before_lc, or --lc_edges_session")
 
     # Project root is one level up from this script
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -403,6 +432,7 @@ def main():
 
     for param_key, json_name in [
         ("poses_after_lc", "poses_after_lc.json"),
+        ("poses_before_lc", "poses_before_lc.json"),
         ("lc_edges", "lc_edges.json"),
     ]:
         abs_path = os.path.join(dataset_dir, json_name)

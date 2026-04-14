@@ -137,6 +137,7 @@
 		var pcFile = getQueryParam('pc') || 'data/metadata.json';
 		var trjFile = getQueryParam('trj') || '';
 		var posesAfterFile = getQueryParam('poses_after_lc') || '';
+		var posesBeforeFile = getQueryParam('poses_before_lc') || '';
 		var lcEdgesFile = getQueryParam('lc_edges') || '';
 		var flagsFile = pcFile.replace(/\/[^/]+$/, '/flags.json');
 
@@ -647,18 +648,88 @@
 				console.log("LC edges drawn: " + midpoints.length + " edges with labels");
 			}
 
+			// Draw dashed line segments (no labels) from a flat [x,y,z,x,y,z,...] array.
+			function drawDashedSegments(positions, color) {
+				if (positions.length === 0) return;
+				var geometry = new LineSegmentsGeometry();
+				geometry.setPositions(new Float32Array(positions));
+				var mat = new LineMaterial({
+					color: color,
+					linewidth: 2,
+					resolution: new THREE.Vector2(1000, 1000),
+				});
+				mat.dashed = true;
+				mat.defines.USE_DASH = '';
+				mat.needsUpdate = true;
+				mat.dashScale = 10;
+				mat.dashSize = 0.5;
+				mat.gapSize = 0.2;
+				var lines = new LineSegments2(geometry, mat);
+				lines.computeLineDistances();
+				viewer.scene.scene.add(lines);
+			}
+
+			// Connect matching poses by filename with dashed lines,
+			// labelled at the midpoint with the before→after distance.
+			function drawBeforeAfterLinks(posesBefore, posesAfter) {
+				var afterMap = buildPosePositionMap(posesAfter);
+				var positions = [];
+				var labels = [];  // {pos, distance}
+				var skipped = 0;
+				for (var i = 0; i < posesBefore.length; i++) {
+					var m = posesBefore[i].matrix;
+					var pBefore = new THREE.Vector3(m[3], m[7], m[11]);
+					var pAfter = afterMap[posesBefore[i].filename];
+					if (!pAfter) { skipped++; continue; }
+					positions.push(pBefore.x, pBefore.y, pBefore.z, pAfter.x, pAfter.y, pAfter.z);
+					labels.push({
+						pos: new THREE.Vector3(
+							(pBefore.x + pAfter.x) / 2,
+							(pBefore.y + pAfter.y) / 2,
+							(pBefore.z + pAfter.z) / 2),
+						distance: pBefore.distanceTo(pAfter),
+					});
+				}
+				if (skipped > 0) {
+					console.warn("Before/after links: skipped " + skipped + " (no matching after pose)");
+				}
+				drawDashedSegments(positions, 0x00aaff);
+
+				for (var j = 0; j < labels.length; j++) {
+					var label = new Potree.TextSprite(labels[j].distance.toFixed(3) + "m");
+					label.setTextColor({r: 180, g: 220, b: 255, a: 1.0});
+					label.setBorderColor({r: 0, g: 60, b: 120, a: 0.8});
+					label.setBackgroundColor({r: 0, g: 30, b: 60, a: 0.5});
+					label.position.copy(labels[j].pos);
+					label.scale.set(0.3, 0.3, 0.3);
+					viewer.scene.scene.add(label);
+				}
+
+				console.log("Before/after links drawn: " + labels.length);
+			}
+
 			var posesAfterPromise = fetchPoses(posesAfterFile, "Poses after LC");
+			var posesBeforePromise = fetchPoses(posesBeforeFile, "Poses before LC");
 			var edgesPromise = (!lcEdgesFile) ? Promise.resolve(null) :
 				fetch(lcEdgesFile).then(function(r) {
 					if (!r.ok) { console.warn("LC edges file not found: " + lcEdgesFile); return null; }
 					return r.json();
 				}).catch(function(err) { console.warn("Failed to load LC edges: " + err); return null; });
 
-			Promise.all([posesAfterPromise, edgesPromise]).then(function(results) {
+			Promise.all([posesAfterPromise, posesBeforePromise, edgesPromise]).then(function(results) {
 				var posesAfter = results[0];
-				var edges = results[1];
+				var posesBefore = results[1];
+				var edges = results[2];
 				if (posesAfter) {
 					viewer.scene.scene.add(buildPoseAxes(posesAfter, 0.3));
+				}
+				if (posesBefore) {
+					viewer.scene.scene.add(buildPoseAxes(posesBefore, 0.15));
+				}
+				if (posesBefore && posesAfter) {
+					drawBeforeAfterLinks(posesBefore, posesAfter);
+				} else if (posesBefore && !posesAfter) {
+					console.warn("poses_before_lc loaded but no poses_after_lc to link against");
 				}
 				if (edges && edges.length > 0 && posesAfter) {
 					drawLCEdges(edges, buildPosePositionMap(posesAfter));
