@@ -206,23 +206,56 @@ export class FirstPersonControls extends EventDispatcher {
 		}
 	}
 
-	startRouteFly (positions) {
-		if (!positions || positions.length < 2) return;
+	initRouteFly (positions) {
+		if (!positions || positions.length < 2) return false;
+		if (this.routeFlyPositions === positions) return true;
 
-		// recompute path data only if positions changed
-		if (this.routeFlyPositions !== positions) {
-			let distances = [0];
-			for (let i = 1; i < positions.length; i++) {
-				distances.push(distances[i - 1] + positions[i].distanceTo(positions[i - 1]));
-			}
-			this.routeFlyPositions = positions;
-			this.routeFlyDistances = distances;
-			this.routeFlyTotalLength = distances[distances.length - 1];
-			this.routeFlyDistance = 0;
+		let distances = [0];
+		for (let i = 1; i < positions.length; i++) {
+			distances.push(distances[i - 1] + positions[i].distanceTo(positions[i - 1]));
 		}
+		this.routeFlyPositions = positions;
+		this.routeFlyDistances = distances;
+		this.routeFlyTotalLength = distances[distances.length - 1];
+		this.routeFlyDistance = 0;
+		return true;
+	}
 
+	startRouteFly (positions) {
+		if (!this.initRouteFly(positions)) return;
 		this.routeFlyHeightOffset = 0;
 		this.routeFlyActive = true;
+	}
+
+	getRouteFlyProgress () {
+		if (!this.routeFlyPositions || this.routeFlyTotalLength <= 0) return 0;
+		return this.routeFlyDistance / this.routeFlyTotalLength;
+	}
+
+	seekRouteFly (fraction) {
+		if (!this.routeFlyPositions || this.routeFlyTotalLength <= 0) return;
+		fraction = Math.max(0, Math.min(1, fraction));
+		this.routeFlyDistance = fraction * this.routeFlyTotalLength;
+		this.applyRouteFlyPosition();
+	}
+
+	applyRouteFlyPosition () {
+		let d = this.routeFlyDistance;
+		let dists = this.routeFlyDistances;
+		let lo = 0, hi = dists.length - 2;
+		while (lo < hi) {
+			let mid = (lo + hi + 1) >> 1;
+			if (dists[mid] <= d) lo = mid; else hi = mid - 1;
+		}
+		let segLen = dists[lo + 1] - dists[lo];
+		let frac = segLen > 0 ? (d - dists[lo]) / segLen : 0;
+		let p0 = this.routeFlyPositions[lo];
+		let p1 = this.routeFlyPositions[lo + 1];
+		this.scene.view.position.set(
+			p0.x + (p1.x - p0.x) * frac,
+			p0.y + (p1.y - p0.y) * frac,
+			p0.z + (p1.z - p0.z) * frac + this.routeFlyHeightOffset
+		);
 	}
 
 	stopRouteFly () {
@@ -315,29 +348,13 @@ export class FirstPersonControls extends EventDispatcher {
 			this.routeFlyDistance += this.viewer.getMoveSpeed() * delta;
 
 			if (this.routeFlyDistance >= this.routeFlyTotalLength) {
-				// reached the end — reset so next start begins from 0
+				// reached the end — snap to last point and stop
 				let last = this.routeFlyPositions[this.routeFlyPositions.length - 1];
 				this.scene.view.position.set(last.x, last.y, last.z + this.routeFlyHeightOffset);
 				this.routeFlyDistance = 0;
 				this.stopRouteFly();
 			} else {
-				// binary search for segment
-				let d = this.routeFlyDistance;
-				let dists = this.routeFlyDistances;
-				let lo = 0, hi = dists.length - 2;
-				while (lo < hi) {
-					let mid = (lo + hi + 1) >> 1;
-					if (dists[mid] <= d) lo = mid; else hi = mid - 1;
-				}
-				let segLen = dists[lo + 1] - dists[lo];
-				let frac = segLen > 0 ? (d - dists[lo]) / segLen : 0;
-				let p0 = this.routeFlyPositions[lo];
-				let p1 = this.routeFlyPositions[lo + 1];
-				this.scene.view.position.set(
-					p0.x + (p1.x - p0.x) * frac,
-					p0.y + (p1.y - p0.y) * frac,
-					p0.z + (p1.z - p0.z) * frac + this.routeFlyHeightOffset
-				);
+				this.applyRouteFlyPosition();
 			}
 		}
 

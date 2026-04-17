@@ -44,6 +44,19 @@
 		<div id="camera_display">camera coordinate: [-, -, -]</div>
 	</div>
 
+	<div id="route_fly_bar" style="
+		position: absolute; top: 10px; left: 60px; right: 10px; z-index: 1000;
+		background: rgba(0,0,0,0.6); padding: 6px 12px;
+		border-radius: 4px; display: none;
+		align-items: center; gap: 10px;
+	">
+		<span style="color: #aac; font: 12px monospace;">Route</span>
+		<input id="route_fly_slider" type="range" min="0" max="1000" value="0" step="1" style="
+			pointer-events: auto; flex: 1; vertical-align: middle;
+		">
+		<span id="route_fly_progress" style="color: #aac; font: 12px monospace; min-width: 40px; text-align: right;">0%</span>
+	</div>
+
 	<div id="flags_panel" style="
 		position: absolute; bottom: 80px; left: 10px; z-index: 1000;
 		background: rgba(0,0,0,0.8); color: #0f0;
@@ -207,6 +220,7 @@
 		Potree.loadPointCloud(pcFile, "pointcloud", function(e) {
 			var pointcloud = e.pointcloud;
 			viewer.scene.addPointCloud(pointcloud);
+			viewer.setDescription("");
 
 			var material = pointcloud.material;
 			material.activeAttributeName = "intensity gradient";
@@ -808,25 +822,87 @@
 
 					// Show Route Fly button
 					var btn = document.getElementById('route_fly_btn');
+					var bar = document.getElementById('route_fly_bar');
+					var slider = document.getElementById('route_fly_slider');
+					var progressLabel = document.getElementById('route_fly_progress');
 					btn.style.display = 'inline-block';
 
+					viewer.fpControls.initRouteFly(window.trajectoryPositions);
+
 					var flying = false;
+					var scrubbing = false;
+					var sliderMax = parseInt(slider.max, 10);
+
+					var controlsHint = document.getElementById('controls_hint');
+
+					function setFlying(on) {
+						flying = on;
+						btn.textContent = on ? 'Stop Fly' : 'Route Fly';
+						bar.style.display = on ? 'flex' : 'none';
+						controlsHint.style.top = on ? '50px' : '10px';
+					}
+
+					// Track Potree sidebar open/close to keep the slider bar clear of the menu.
+					// toggleSidebar() sets #potree_render_area's `left` to 300px when open, 0 when closed.
+					var renderAreaEl = document.getElementById('potree_render_area');
+					function syncBarLeft() {
+						var shift = renderAreaEl ? parseInt(renderAreaEl.style.left || '0', 10) : 0;
+						bar.style.left = (shift + 60) + 'px';
+					}
+					if (renderAreaEl) {
+						new MutationObserver(syncBarLeft).observe(renderAreaEl, {
+							attributes: true, attributeFilter: ['style'],
+						});
+						syncBarLeft();
+					}
+
+					function updateSliderFromProgress() {
+						var fraction = viewer.fpControls.getRouteFlyProgress();
+						slider.value = Math.round(fraction * sliderMax);
+						progressLabel.textContent = Math.round(fraction * 100) + '%';
+					}
+
 					btn.addEventListener('click', function() {
 						if (!flying) {
+							// If we're parked near the end (usually after scrubbing to 100%),
+							// restart from the beginning. Otherwise resume where we stopped.
+							if (parseInt(slider.value, 10) >= sliderMax * 0.99) {
+								viewer.fpControls.seekRouteFly(0);
+							}
 							viewer.fpControls.startRouteFly(window.trajectoryPositions);
-							btn.textContent = 'Stop Fly';
-							flying = true;
+							updateSliderFromProgress();
+							setFlying(true);
 						} else {
 							viewer.fpControls.stopRouteFly();
-							btn.textContent = 'Route Fly';
-							flying = false;
+							setFlying(false);
 						}
 					});
 
 					viewer.fpControls.addEventListener('routefly_stopped', function() {
-						btn.textContent = 'Route Fly';
-						flying = false;
+						setFlying(false);
+						updateSliderFromProgress();
 					});
+
+					function onScrub() {
+						var fraction = parseInt(slider.value, 10) / sliderMax;
+						viewer.fpControls.seekRouteFly(fraction);
+						progressLabel.textContent = Math.round(fraction * 100) + '%';
+					}
+					slider.addEventListener('mousedown', function() { scrubbing = true; });
+					slider.addEventListener('touchstart', function() { scrubbing = true; });
+					slider.addEventListener('mouseup', function() { scrubbing = false; });
+					slider.addEventListener('touchend', function() { scrubbing = false; });
+					slider.addEventListener('input', onScrub);
+
+					function tickSlider() {
+						if (flying && !scrubbing) {
+							var fraction = viewer.fpControls.getRouteFlyProgress();
+							slider.value = Math.round(fraction * sliderMax);
+							progressLabel.textContent = Math.round(fraction * 100) + '%';
+						}
+						requestAnimationFrame(tickSlider);
+					}
+					requestAnimationFrame(tickSlider);
 				})
 				.catch(function(err) {
 					console.warn("Failed to load trajectory: " + err);
