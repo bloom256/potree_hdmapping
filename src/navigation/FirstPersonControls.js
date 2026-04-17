@@ -63,6 +63,7 @@ export class FirstPersonControls extends EventDispatcher {
 		this.routeFlyDistances = null;
 		this.routeFlyTotalLength = 0;
 		this.routeFlyDistance = 0;
+		this.routeFlyHeightOffset = 0;
 
 		let drag = (e) => {
 			if (e.drag.object !== null) {
@@ -220,6 +221,7 @@ export class FirstPersonControls extends EventDispatcher {
 			this.routeFlyDistance = 0;
 		}
 
+		this.routeFlyHeightOffset = 0;
 		this.routeFlyActive = true;
 	}
 
@@ -259,8 +261,12 @@ export class FirstPersonControls extends EventDispatcher {
 			let moveDown = this.keys.DOWN.some(e => ih.pressedKeys[e]);
 
 			if (this.routeFlyActive) {
-				if (moveForward || moveBackward || moveLeft || moveRight || moveUp || moveDown) {
+				if (moveForward || moveBackward || moveLeft || moveRight) {
 					this.stopRouteFly();
+				} else if (moveUp || moveDown) {
+					let dz = this.viewer.getMoveSpeed() * delta;
+					if (moveUp && !moveDown) this.routeFlyHeightOffset += dz;
+					else if (moveDown && !moveUp) this.routeFlyHeightOffset -= dz;
 				}
 			}
 
@@ -311,7 +317,7 @@ export class FirstPersonControls extends EventDispatcher {
 			if (this.routeFlyDistance >= this.routeFlyTotalLength) {
 				// reached the end — reset so next start begins from 0
 				let last = this.routeFlyPositions[this.routeFlyPositions.length - 1];
-				this.scene.view.position.set(last.x, last.y, last.z);
+				this.scene.view.position.set(last.x, last.y, last.z + this.routeFlyHeightOffset);
 				this.routeFlyDistance = 0;
 				this.stopRouteFly();
 			} else {
@@ -330,7 +336,7 @@ export class FirstPersonControls extends EventDispatcher {
 				this.scene.view.position.set(
 					p0.x + (p1.x - p0.x) * frac,
 					p0.y + (p1.y - p0.y) * frac,
-					p0.z + (p1.z - p0.z) * frac
+					p0.z + (p1.z - p0.z) * frac + this.routeFlyHeightOffset
 				);
 			}
 		}
