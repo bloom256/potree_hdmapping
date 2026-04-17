@@ -51,6 +51,18 @@ def convert_poses_file(src, dest, label):
     log(f"Poses JSON written: {dest} ({os.path.getsize(dest)} bytes)")
 
 
+def get_lan_ip():
+    """Return the host's primary LAN IP, or None if it can't be determined."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
 def find_available_port(start=8080):
     """Find an available port starting from *start*."""
     for port in range(start, start + 100):
@@ -455,6 +467,10 @@ def main():
     log(f"Starting Node.js HTTP server on port {port}")
     log(f"Serving from: {project_root}")
     log(f"Viewer URL: {url}")
+    lan_ip = get_lan_ip()
+    if lan_ip:
+        lan_url = f"http://{lan_ip}:{port}/index.html?{query}"
+        log(f"LAN URL:    {lan_url}")
     log("Opening browser ...")
 
     threading.Timer(0.5, lambda: webbrowser.open(url)).start()
