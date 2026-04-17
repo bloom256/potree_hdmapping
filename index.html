@@ -669,6 +669,32 @@
 				viewer.scene.scene.add(lines);
 			}
 
+			// Extract trailing integer from a filename (e.g. "scan_lio_42.laz" -> 42).
+			// Returns null if no trailing number is found.
+			function scanIndexFromFilename(filename) {
+				var match = filename.match(/(\d+)(?:\.[^.]+)*$/);
+				return match ? parseInt(match[1], 10) : null;
+			}
+
+			// Draw small scan-index labels at each pose position.
+			function drawScanIndexLabels(poses) {
+				var drawn = 0;
+				for (var i = 0; i < poses.length; i++) {
+					var idx = scanIndexFromFilename(poses[i].filename);
+					if (idx === null) continue;
+					var m = poses[i].matrix;
+					var label = new Potree.TextSprite(String(idx));
+					label.setTextColor({r: 255, g: 255, b: 255, a: 1.0});
+					label.setBorderColor({r: 0, g: 0, b: 0, a: 0.6});
+					label.setBackgroundColor({r: 0, g: 0, b: 0, a: 0.4});
+					label.position.set(m[3], m[7], m[11] + 0.2);
+					label.scale.set(0.25, 0.25, 0.25);
+					viewer.scene.scene.add(label);
+					drawn++;
+				}
+				console.log("Scan index labels drawn: " + drawn);
+			}
+
 			// Connect matching poses by filename with dashed lines,
 			// labelled at the midpoint with the before→after distance.
 			function drawBeforeAfterLinks(posesBefore, posesAfter) {
@@ -722,6 +748,7 @@
 				var edges = results[2];
 				if (posesAfter) {
 					viewer.scene.scene.add(buildPoseAxes(posesAfter, 0.3));
+					drawScanIndexLabels(posesAfter);
 				}
 				if (posesBefore) {
 					viewer.scene.scene.add(buildPoseAxes(posesBefore, 0.15));
