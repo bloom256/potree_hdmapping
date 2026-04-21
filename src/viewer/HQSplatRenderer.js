@@ -169,6 +169,14 @@ export class HQSplatRenderer{
 				depthMaterial.setClipBoxes(material.clipBoxes);
 				depthMaterial.setClipPolygons(material.clipPolygons);
 
+				// Propagate the active attribute filter so filtered points don't write
+				// depth either — otherwise they'd appear as black holes in the final
+				// composition.
+				depthMaterial.activeAttributeName = material.activeAttributeName;
+				depthMaterial.setFilterAttribute(
+					material.getFilterAttributeName(),
+					material.getFilterAttributeRange());
+
 				pointcloud.material = depthMaterial;
 			}
 			
@@ -235,6 +243,19 @@ export class HQSplatRenderer{
 				attributeMaterial.clipMethod = material.clipMethod;
 				attributeMaterial.setClipBoxes(material.clipBoxes);
 				attributeMaterial.setClipPolygons(material.clipPolygons);
+
+				// Sync per-attribute scalar ranges to the cloned material. Clear first
+				// so keys removed from the source don't linger here and subtly affect
+				// future renders.
+				attributeMaterial.ranges.clear();
+				for (let [attName, range] of material.ranges) {
+					attributeMaterial.setRange(attName, range);
+				}
+
+				// Propagate the active attribute filter (independent of color mode).
+				attributeMaterial.setFilterAttribute(
+					material.getFilterAttributeName(),
+					material.getFilterAttributeRange());
 
 				pointcloud.material = attributeMaterial;
 			}

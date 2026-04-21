@@ -17,6 +17,7 @@ attribute float spacing;
 attribute float gpsTime;
 attribute vec3 normal;
 attribute float aExtra;
+attribute float aFilter;
 
 uniform mat4 modelMatrix;
 uniform mat4 modelViewMatrix;
@@ -105,6 +106,10 @@ uniform vec2 uExtraNormalizedRange;
 uniform vec2 uExtraRange;
 uniform float uExtraScale;
 uniform float uExtraOffset;
+uniform float uFilterAttrEnabled;
+uniform float uFilterAttrScale;
+uniform float uFilterAttrOffset;
+uniform vec2 uFilterAttrRange;
 
 uniform vec3 uShadowColor;
 
@@ -795,11 +800,20 @@ void doClipping(){
 		vec2 range = uFilterPointSourceIDClipRange;
 		if(pointSourceID < range.x || pointSourceID > range.y){
 			gl_Position = vec4(100.0, 100.0, 100.0, 0.0);
-			
+
 			return;
 		}
 	}
 	#endif
+
+	if(uFilterAttrEnabled > 0.5){ // generic attribute range filter (independent of colorization)
+		float w_f = (aFilter + uFilterAttrOffset) * uFilterAttrScale;
+		if(w_f < uFilterAttrRange.x || w_f > uFilterAttrRange.y){
+			gl_Position = vec4(100.0, 100.0, 100.0, 0.0);
+
+			return;
+		}
+	}
 
 	int clipVolumesCount = 0;
 	int insideCount = 0;

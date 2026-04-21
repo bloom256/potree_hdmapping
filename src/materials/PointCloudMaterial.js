@@ -51,6 +51,8 @@ export class PointCloudMaterial extends THREE.RawShaderMaterial {
 		this.defines = new Map();
 
 		this.ranges = new Map();
+		this._filterAttributeName = null;
+		this._filterAttributeRange = null;
 
 		this._activeAttributeName = null;
 
@@ -141,6 +143,10 @@ export class PointCloudMaterial extends THREE.RawShaderMaterial {
 
 			uExtraScale:		{ type: "f", value: 1},
 			uExtraOffset:		{ type: "f", value: 0},
+			uFilterAttrEnabled:	{ type: "f", value: 0},
+			uFilterAttrScale:	{ type: "f", value: 1},
+			uFilterAttrOffset:	{ type: "f", value: 0},
+			uFilterAttrRange:	{ type: "2fv", value: [0, 1]},
 			uExtraRange:		{ type: "2fv", value: [0, 1] },
 			uExtraGammaBrightContr:	{ type: "3fv", value: [1, 0, 0] },
 
@@ -895,6 +901,54 @@ export class PointCloudMaterial extends THREE.RawShaderMaterial {
 
 	getRange(attributeName){
 		return this.ranges.get(attributeName);
+	}
+
+	getFilterAttributeName(){
+		return this._filterAttributeName;
+	}
+
+	getFilterAttributeRange(){
+		return this._filterAttributeRange;
+	}
+
+	// Filter points by the value of an arbitrary scalar attribute, independent of
+	// which attribute is used for colorization. Pass (null) or (name, null) to clear.
+	setFilterAttribute(attributeName, newRange){
+		const oldName = this._filterAttributeName;
+		const oldRange = this._filterAttributeRange;
+
+		const clearing = attributeName == null || newRange == null;
+		if (!clearing) {
+			// Validate: must be a 2-element array of finite numbers with min <= max.
+			const valid = Array.isArray(newRange)
+				&& newRange.length === 2
+				&& Number.isFinite(newRange[0])
+				&& Number.isFinite(newRange[1])
+				&& newRange[0] <= newRange[1];
+			if (!valid) {
+				console.warn("setFilterAttribute: ignoring invalid range", newRange);
+				return;
+			}
+		}
+
+		if (clearing) {
+			if (oldName == null && oldRange == null) return;
+			this._filterAttributeName = null;
+			this._filterAttributeRange = null;
+		} else {
+			const nameChanged = oldName !== attributeName;
+			const rangeChanged = !oldRange
+				|| oldRange[0] !== newRange[0]
+				|| oldRange[1] !== newRange[1];
+			if (!nameChanged && !rangeChanged) return;
+			this._filterAttributeName = attributeName;
+			this._filterAttributeRange = [newRange[0], newRange[1]];
+		}
+
+		this.dispatchEvent({
+			type: 'material_property_changed',
+			target: this,
+		});
 	}
 
 	setRange(attributeName, newRange){

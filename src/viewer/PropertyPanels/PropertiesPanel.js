@@ -463,8 +463,8 @@ export class PropertiesPanel{
 					if(minMaxAreNumbers){
 						panel.find('#sldExtraRange').slider({
 							range: true,
-							min: min, 
-							max: max, 
+							min: min,
+							max: max,
 							step: 0.01,
 							values: selectedRange,
 							slide: (event, ui) => {
@@ -476,6 +476,7 @@ export class PropertiesPanel{
 					}
 
 				}
+
 
 				let blockWeights = $('#materials\\.composite_weight_container');
 				let blockElevation = $('#materials\\.elevation_container');

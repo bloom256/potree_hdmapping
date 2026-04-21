@@ -151,7 +151,34 @@ let attributeLocations = {
 	"spacing": {name: "spacing", location: 9},
 	"gps-time":  {name: "gpsTime", location: 10},
 	"aExtra":  {name: "aExtra", location: 11},
+	"aFilter": {name: "aFilter", location: 12},
 };
+
+// Compute the (scale, offset) pair used to normalize an extra/custom scalar
+// attribute into [0, 1] for the shader's `w = (value + offset) * scale`.
+// The decoder only packs values to [0, 1] for types larger than float32 (see
+// DecoderWorker*.js); smaller types (int8..float32) stay raw, which changes
+// the math here. `range` is the target (colorization or filter) range in the
+// attribute's raw units.
+function computeExtraScaleOffset(attrMeta, range) {
+	const isPacked = attrMeta.type.size > 4;
+	const initialRange = attrMeta.initialRange;
+	const initialRangeSize = initialRange[1] - initialRange[0];
+	const globalRangeSize = range[1] - range[0];
+
+	let scale, offset;
+	if (isPacked) {
+		scale = initialRangeSize / globalRangeSize;
+		offset = -(range[0] - initialRange[0]) / initialRangeSize;
+	} else {
+		scale = 1 / globalRangeSize;
+		offset = -range[0];
+	}
+
+	if (Number.isNaN(scale)) scale = 1;
+	if (Number.isNaN(offset)) offset = 0;
+	return {scale, offset};
+}
 
 class Shader {
 
@@ -709,6 +736,41 @@ export class Renderer {
 			view = params.viewOverride;
 		}
 
+		// Resolve attribute-filter state once per draw call — it's constant across
+		// all visible nodes, so we avoid hundreds of per-node metadata lookups and
+		// redundant uniform sets. Buffer/VAO binding still happens per-node below.
+		const filterAttrLocation = attributeLocations["aFilter"].location;
+		const filterCtx = (() => {
+			const name = material.getFilterAttributeName();
+			const range = material.getFilterAttributeRange();
+			if (!name || !range) return null;
+			const meta = octree.pcoGeometry.pointAttributes.attributes.find(a => a.name === name);
+			if (!meta) return null;
+			const {scale, offset} = computeExtraScaleOffset(meta, meta.range);
+			const [gmin, gmax] = meta.range;
+			const gsize = gmax - gmin;
+			return {
+				name,
+				scale,
+				offset,
+				normalizedRange: [
+					(range[0] - gmin) / gsize,
+					(range[1] - gmin) / gsize,
+				],
+			};
+		})();
+
+		// Scale/offset/range are constant across nodes. The enabled flag may toggle
+		// off per-node if a node happens to be missing the filter attribute buffer
+		// (rare — PotreeConverter normally writes every attribute at every level).
+		if (filterCtx) {
+			shader.setUniform1f("uFilterAttrScale", filterCtx.scale);
+			shader.setUniform1f("uFilterAttrOffset", filterCtx.offset);
+			shader.setUniform2f("uFilterAttrRange", filterCtx.normalizedRange);
+		} else {
+			shader.setUniform1f("uFilterAttrEnabled", 0);
+		}
+
 		let worldView = new THREE.Matrix4();
 
 		let mat4holder = new Float32Array(16);
@@ -990,20 +1052,9 @@ export class Renderer {
 						range = [0, 1];
 					}
 
-					let initialRange = attExtra.initialRange;
-					let initialRangeSize = initialRange[1] - initialRange[0];
-
-					let globalRange = range;
-					let globalRangeSize = globalRange[1] - globalRange[0];
-
-					let scale = initialRangeSize / globalRangeSize;
-					let offset = -(globalRange[0] - initialRange[0]) / initialRangeSize;
-
-					scale = Number.isNaN(scale) ? 1 : scale;
-					offset = Number.isNaN(offset) ? 0 : offset;
-
+					const {scale, offset} = computeExtraScaleOffset(attExtra, range);
 					shader.setUniform1f("uExtraScale", scale);
-					shader.setUniform1f("uExtraOffset", offset);					
+					shader.setUniform1f("uExtraOffset", offset);
 				}
 
 			}else{
@@ -1018,13 +1069,33 @@ export class Renderer {
 
 						let type = this.glTypeMapping.get(bufferAttribute.array.constructor);
 						let normalized = bufferAttribute.normalized;
-						
+
 						gl.bindBuffer(gl.ARRAY_BUFFER, vbo.handle);
 						gl.vertexAttribPointer(attributeLocation, bufferAttribute.itemSize, type, normalized, 0, 0);
 						gl.enableVertexAttribArray(attributeLocation);
-						
+
 					}
 				}
+			}
+
+			// Bind the filter attribute's per-node buffer to `aFilter`. Scale/offset/
+			// range are already set once at the top of renderNodes.
+			if (filterCtx) {
+				const filterBufferAttribute = geometry.attributes[filterCtx.name];
+				const filterVbo = webglBuffer.vbos.get(filterCtx.name);
+				if (filterBufferAttribute && filterVbo) {
+					const type = this.glTypeMapping.get(filterBufferAttribute.array.constructor);
+					gl.bindBuffer(gl.ARRAY_BUFFER, filterVbo.handle);
+					gl.vertexAttribPointer(filterAttrLocation, filterBufferAttribute.itemSize, type, filterBufferAttribute.normalized, 0, 0);
+					gl.enableVertexAttribArray(filterAttrLocation);
+					shader.setUniform1f("uFilterAttrEnabled", 1);
+				} else {
+					// Node is missing the filter attribute; pass it through unfiltered.
+					gl.disableVertexAttribArray(filterAttrLocation);
+					shader.setUniform1f("uFilterAttrEnabled", 0);
+				}
+			} else {
+				gl.disableVertexAttribArray(filterAttrLocation);
 			}
 
 			let numPoints = webglBuffer.numElements;

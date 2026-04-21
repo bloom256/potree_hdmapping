@@ -885,7 +885,115 @@ export class Sidebar{
 		this.initReturnFilters();
 		this.initGPSTimeFilters();
 		this.initPointSourceIDFilters();
+		this.initAttributeFilter();
 
+	}
+
+	initAttributeFilter(){
+		const sel = $('#selFilterAttribute');
+		const sldItem = $('#sldFilterAttr_item');
+		const sld = $('#sldFilterAttr');
+		const lbl = $('#lblFilterAttr');
+		const btnClear = $('#btnFilterAttrClear');
+
+		const isNumericScalar = a => a.numElements === 1
+			&& typeof a.range[0] === "number"
+			&& typeof a.range[1] === "number"
+			&& a.range[0] !== a.range[1];
+
+		// Track which pointcloud the UI is currently bound to, so Clear and the
+		// selector's change handler know where to send updates.
+		let boundPointcloud = null;
+
+		const clearFilter = () => {
+			if (boundPointcloud) {
+				boundPointcloud.material.setFilterAttribute(null, null);
+			}
+			sel.val('');
+			sldItem.hide();
+			lbl.empty();
+		};
+
+		const activate = (attributeName) => {
+			if (!boundPointcloud || !attributeName) {
+				clearFilter();
+				return;
+			}
+
+			const material = boundPointcloud.material;
+			const pointAttrs = boundPointcloud.pcoGeometry.pointAttributes.attributes;
+			const attr = pointAttrs.find(a => a.name === attributeName);
+			if (!attr || !isNumericScalar(attr)) {
+				clearFilter();
+				return;
+			}
+
+			const [fmin, fmax] = attr.range;
+			const current = (material.getFilterAttributeName() === attributeName
+				&& material.getFilterAttributeRange()) || [fmin, fmax];
+			const formatRange = ([a, b]) => `${a.toFixed(3)} .. ${b.toFixed(3)}`;
+
+			sldItem.show();
+			sld.slider({
+				range: true,
+				min: fmin,
+				max: fmax,
+				step: (fmax - fmin) / 1000,
+				values: current,
+				slide: (event, ui) => {
+					const [a, b] = ui.values;
+					lbl.html(formatRange([a, b]));
+					if (a <= fmin && b >= fmax) {
+						material.setFilterAttribute(null, null);
+					} else {
+						material.setFilterAttribute(attributeName, [a, b]);
+					}
+				},
+			});
+			lbl.html(formatRange(current));
+			material.setFilterAttribute(attributeName, current);
+		};
+
+		const bindToPointcloud = (pointcloud) => {
+			boundPointcloud = pointcloud;
+			const pointAttrs = pointcloud.pcoGeometry.pointAttributes.attributes;
+			const filterable = pointAttrs.filter(isNumericScalar);
+
+			sel.empty();
+			sel.append('<option value="">(none)</option>');
+			for (const a of filterable) {
+				sel.append(`<option value="${a.name}">${a.name}</option>`);
+			}
+
+			const existing = pointcloud.material.getFilterAttributeName();
+			if (existing && filterable.some(a => a.name === existing)) {
+				sel.val(existing);
+				activate(existing);
+			} else {
+				sel.val('');
+				sldItem.hide();
+				lbl.empty();
+			}
+		};
+
+		sel.on('change', () => activate(sel.val()));
+		btnClear.on('click', clearFilter);
+
+		// Wire to the current scene, and re-wire on scene swap.
+		const subscribeScene = (scene) => {
+			const onPointcloudAdded = (e) => bindToPointcloud(e.pointcloud);
+			scene.addEventListener('pointcloud_added', onPointcloudAdded);
+			for (const pc of scene.pointclouds) {
+				bindToPointcloud(pc);
+			}
+			return () => scene.removeEventListener('pointcloud_added', onPointcloudAdded);
+		};
+
+		let unsubscribeScene = subscribeScene(this.viewer.scene);
+		this.viewer.addEventListener('scene_changed', (e) => {
+			unsubscribeScene();
+			unsubscribeScene = subscribeScene(e.scene);
+		});
 	}
 
 	initReturnFilters(){
