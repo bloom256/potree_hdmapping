@@ -64,6 +64,15 @@ export class FirstPersonControls extends EventDispatcher {
 		this.routeFlyTotalLength = 0;
 		this.routeFlyDistance = 0;
 		this.routeFlyHeightOffset = 0;
+		// Optional pose-driven orientation: keyframes projected onto the route's arc-length.
+		// Both arrays are the same length and sorted by ascending distance.
+		this.routeFlyKeyframeDistances = null;
+		this.routeFlyKeyframeQuaternions = null;
+		// Body-frame look offsets applied on top of the pose-driven orientation so users can
+		// tweak the camera direction with the mouse during a pose-driven Route Fly. Drag
+		// accumulates into these the same way Space/Shift accumulates into routeFlyHeightOffset.
+		this.routeFlyCamYawOffset = 0;
+		this.routeFlyCamPitchOffset = 0;
 
 		let drag = (e) => {
 			if (e.drag.object !== null) {
@@ -206,23 +215,64 @@ export class FirstPersonControls extends EventDispatcher {
 		}
 	}
 
-	initRouteFly (positions) {
+	initRouteFly (positions, options) {
 		if (!positions || positions.length < 2) return false;
-		if (this.routeFlyPositions === positions) return true;
 
-		let distances = [0];
-		for (let i = 1; i < positions.length; i++) {
-			distances.push(distances[i - 1] + positions[i].distanceTo(positions[i - 1]));
+		let samePath = (this.routeFlyPositions === positions);
+		if (!samePath) {
+			let distances = [0];
+			for (let i = 1; i < positions.length; i++) {
+				distances.push(distances[i - 1] + positions[i].distanceTo(positions[i - 1]));
+			}
+			this.routeFlyPositions = positions;
+			this.routeFlyDistances = distances;
+			this.routeFlyTotalLength = distances[distances.length - 1];
+			this.routeFlyDistance = 0;
 		}
-		this.routeFlyPositions = positions;
-		this.routeFlyDistances = distances;
-		this.routeFlyTotalLength = distances[distances.length - 1];
-		this.routeFlyDistance = 0;
+
+		let kf = options && options.orientationKeyframes;
+		if (kf !== undefined) {
+			this.setRouteFlyOrientationKeyframes(kf);
+		} else if (!samePath) {
+			// New path with no orientations supplied: drop any stale keyframes from the previous path.
+			this.routeFlyKeyframeDistances = null;
+			this.routeFlyKeyframeQuaternions = null;
+		}
 		return true;
 	}
 
-	startRouteFly (positions) {
-		if (!this.initRouteFly(positions)) return;
+	// Build keyframe arrays sorted by arc-length on the active route. Pass null/undefined to clear.
+	// keyframes: { positions: THREE.Vector3[], quaternions: THREE.Quaternion[] }
+	setRouteFlyOrientationKeyframes (keyframes) {
+		if (!keyframes || !this.routeFlyPositions
+			|| !keyframes.positions || !keyframes.quaternions
+			|| keyframes.positions.length !== keyframes.quaternions.length
+			|| keyframes.positions.length < 2) {
+			this.routeFlyKeyframeDistances = null;
+			this.routeFlyKeyframeQuaternions = null;
+			return;
+		}
+
+		let routePositions = this.routeFlyPositions;
+		let routeDistances = this.routeFlyDistances;
+		let pairs = [];
+		for (let i = 0; i < keyframes.positions.length; i++) {
+			let kp = keyframes.positions[i];
+			let bestIdx = 0;
+			let bestD = Infinity;
+			for (let j = 0; j < routePositions.length; j++) {
+				let d = kp.distanceToSquared(routePositions[j]);
+				if (d < bestD) { bestD = d; bestIdx = j; }
+			}
+			pairs.push({ distance: routeDistances[bestIdx], quat: keyframes.quaternions[i].clone() });
+		}
+		pairs.sort((a, b) => a.distance - b.distance);
+		this.routeFlyKeyframeDistances = pairs.map(p => p.distance);
+		this.routeFlyKeyframeQuaternions = pairs.map(p => p.quat);
+	}
+
+	startRouteFly (positions, options) {
+		if (!this.initRouteFly(positions, options)) return;
 		this.routeFlyHeightOffset = 0;
 		this.routeFlyActive = true;
 	}
@@ -256,6 +306,41 @@ export class FirstPersonControls extends EventDispatcher {
 			p0.y + (p1.y - p0.y) * frac,
 			p0.z + (p1.z - p0.z) * frac + this.routeFlyHeightOffset
 		);
+
+		if (this.routeFlyKeyframeDistances) {
+			this.applyRouteFlyOrientation(d);
+		}
+	}
+
+	applyRouteFlyOrientation (d) {
+		let kfd = this.routeFlyKeyframeDistances;
+		let kfq = this.routeFlyKeyframeQuaternions;
+		let q;
+
+		if (d <= kfd[0]) {
+			q = kfq[0];
+		} else if (d >= kfd[kfd.length - 1]) {
+			q = kfq[kfq.length - 1];
+		} else {
+			let lo = 0, hi = kfd.length - 2;
+			while (lo < hi) {
+				let mid = (lo + hi + 1) >> 1;
+				if (kfd[mid] <= d) lo = mid; else hi = mid - 1;
+			}
+			let segLen = kfd[lo + 1] - kfd[lo];
+			let frac = segLen > 0 ? (d - kfd[lo]) / segLen : 0;
+			q = kfq[lo].clone().slerp(kfq[lo + 1], frac);
+		}
+
+		// Body-frame look direction: start at +X, pitch around body +Y (positive = look up),
+		// yaw around body +Z (positive = rotate +X toward +Y), then transform to world by
+		// the pose quaternion. Roll is reset so manual Q/E adjustments don't fight pose yaw/pitch.
+		let forward = new THREE.Vector3(1, 0, 0);
+		forward.applyAxisAngle(new THREE.Vector3(0, -1, 0), this.routeFlyCamPitchOffset);
+		forward.applyAxisAngle(new THREE.Vector3(0, 0, 1), this.routeFlyCamYawOffset);
+		forward.applyQuaternion(q);
+		this.scene.view.direction = forward;
+		this.scene.view.roll = 0;
 	}
 
 	stopRouteFly () {
@@ -385,15 +470,20 @@ export class FirstPersonControls extends EventDispatcher {
 		}
 
 		{ // apply rotation
-			let yaw = view.yaw;
-			let pitch = view.pitch;
+			let yawChange = this.yawDelta * delta * rollFlip;
+			let pitchChange = this.pitchDelta * delta * rollFlip;
 
-			yaw -= this.yawDelta * delta * rollFlip;
-			pitch -= this.pitchDelta * delta * rollFlip;
-
-			view.yaw = yaw;
-			view.pitch = pitch;
-			view.roll -= this.rollDelta * delta;
+			if (this.routeFlyActive && this.routeFlyKeyframeDistances) {
+				// Pose-driven: mouse drag accumulates as body-frame look offset, so the next
+				// applyRouteFlyOrientation call composes pose * (yaw + pitch offsets) and the
+				// adjustment sticks instead of fighting the pose reset every frame.
+				this.routeFlyCamYawOffset -= yawChange;
+				this.routeFlyCamPitchOffset -= pitchChange;
+			} else {
+				view.yaw -= yawChange;
+				view.pitch -= pitchChange;
+				view.roll -= this.rollDelta * delta;
+			}
 		}
 
 		if (!this.routeFlyActive) { // apply translation

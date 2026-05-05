@@ -106,6 +106,7 @@
 		Alt+MMB &mdash; Place flag<br>
 		Esc &mdash; Clear measurement<br>
 		M &mdash; Minimap<br>
+		P &mdash; Toggle points<br>
 		Minimap DblClick &mdash; Teleport
 		<div style="margin-top: 6px; pointer-events: auto;">
 			<input id="goto_input" type="text" placeholder="x, y, z" style="
@@ -126,6 +127,10 @@
 				border-radius: 3px; padding: 4px 10px; font: 12px monospace;
 				display: none;
 			">Route Fly</button>
+			<label id="rotate_camera_label" style="
+				margin-left: 6px; pointer-events: auto; cursor: pointer;
+				color: #ccc; font: 12px monospace; display: none;
+			" title="Pose-driven camera. Drag with the mouse during a flight to add a body-frame look offset that persists for the rest of the session."><input type="checkbox" id="rotate_camera_chk" style="vertical-align: middle;"/> Rotate camera</label>
 		</div>
 		<div id="roll_display" style="margin-top: 4px; color: #fa0; display: none;">
 			Roll: 0&deg;
@@ -197,6 +202,50 @@
 			}
 
 			return group;
+		}
+
+		// Show + wire the "Rotate camera" checkbox once both poses and a Route Fly path are
+		// available. Idempotent: called from the pose-load and trajectory-load callbacks since
+		// either may resolve first.
+		function setupRotateCameraToggle() {
+			var label = document.getElementById('rotate_camera_label');
+			var btn = document.getElementById('route_fly_btn');
+			if (!label || !btn) return;
+			var routeFlyReady = btn.style.display !== 'none';
+			var posesReady = !!window.poseOrientationKeyframes;
+			if (!routeFlyReady || !posesReady) {
+				label.style.display = 'none';
+				return;
+			}
+			label.style.display = 'inline-block';
+			if (label.dataset.wired === '1') return;
+			label.dataset.wired = '1';
+
+			var chk = document.getElementById('rotate_camera_chk');
+			chk.addEventListener('change', function() {
+				var kf = chk.checked ? window.poseOrientationKeyframes : null;
+				window.viewer.fpControls.setRouteFlyOrientationKeyframes(kf);
+			});
+		}
+
+		// Convert pose 4x4 matrices to {positions, quaternions} keyframes used by Route Fly's
+		// "Rotate camera" mode. Pose convention: row-major 4x4, +X is body forward.
+		function buildPoseOrientationKeyframes(poses) {
+			var positions = [];
+			var quaternions = [];
+			var mat4 = new THREE.Matrix4();
+			for (var i = 0; i < poses.length; i++) {
+				var m = poses[i].matrix;
+				positions.push(new THREE.Vector3(m[3], m[7], m[11]));
+				mat4.set(
+					m[0], m[1], m[2],  m[3],
+					m[4], m[5], m[6],  m[7],
+					m[8], m[9], m[10], m[11],
+					0,    0,    0,     1
+				);
+				quaternions.push(new THREE.Quaternion().setFromRotationMatrix(mat4));
+			}
+			return { positions: positions, quaternions: quaternions };
 		}
 
 		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
@@ -499,11 +548,23 @@
 
 			// Escape to clear measurement
 			document.addEventListener('keydown', function(event) {
+				// Ignore shortcuts when typing in inputs so we don't hijack keystrokes.
+				var target = event.target;
+				if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+					return;
+				}
 				if (event.key === 'Escape') {
 					clearMeasurement();
 				}
 				if (event.key === 'm' || event.key === 'M') {
 					viewer.minimap.enabled = !viewer.minimap.enabled;
+				}
+				if (event.key === 'p' || event.key === 'P') {
+					var pcs = viewer.scene.pointclouds;
+					var anyVisible = pcs.some(function(pc) { return pc.visible; });
+					for (var i = 0; i < pcs.length; i++) {
+						pcs[i].visible = !anyVisible;
+					}
 				}
 			});
 
@@ -763,6 +824,8 @@
 				if (posesAfter) {
 					viewer.scene.scene.add(buildPoseAxes(posesAfter, 0.3));
 					drawScanIndexLabels(posesAfter);
+					window.poseOrientationKeyframes = buildPoseOrientationKeyframes(posesAfter);
+					setupRotateCameraToggle();
 				}
 				if (posesBefore) {
 					viewer.scene.scene.add(buildPoseAxes(posesBefore, 0.15));
@@ -826,6 +889,7 @@
 					var slider = document.getElementById('route_fly_slider');
 					var progressLabel = document.getElementById('route_fly_progress');
 					btn.style.display = 'inline-block';
+					setupRotateCameraToggle();
 
 					viewer.fpControls.initRouteFly(window.trajectoryPositions);
 
@@ -876,6 +940,12 @@
 							viewer.fpControls.stopRouteFly();
 							setFlying(false);
 						}
+						// Hand focus back to the render canvas; the InputHandler listens for keydown
+						// on it (tabIndex = 2222), so Space/WASD only reach the camera when the
+						// canvas — not the button — is focused.
+						var canvas = viewer.renderer && viewer.renderer.domElement;
+						if (canvas) canvas.focus();
+						else btn.blur();
 					});
 
 					viewer.fpControls.addEventListener('routefly_stopped', function() {
