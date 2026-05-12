@@ -255,14 +255,46 @@ export class FirstPersonControls extends EventDispatcher {
 
 		let routePositions = this.routeFlyPositions;
 		let routeDistances = this.routeFlyDistances;
+
+		// Brute-force projection is O(N*M) and blocks the UI for several seconds on
+		// real HD-mapping data (~10k poses x ~10k trajectory points). Drop the route
+		// into a 2D grid and look up each pose in its local cell + 1-cell ring.
+		// Poses sit on the trajectory so they always fall inside the search radius
+		// when cellSize >= typical pose-to-route gap.
+		let cellSize = 5;
+		let grid = new Map();
+		for (let j = 0; j < routePositions.length; j++) {
+			let p = routePositions[j];
+			let key = Math.floor(p.x / cellSize) + ',' + Math.floor(p.y / cellSize);
+			let bucket = grid.get(key);
+			if (bucket) bucket.push(j);
+			else grid.set(key, [j]);
+		}
+
 		let pairs = [];
 		for (let i = 0; i < keyframes.positions.length; i++) {
 			let kp = keyframes.positions[i];
-			let bestIdx = 0;
+			let cx = Math.floor(kp.x / cellSize);
+			let cy = Math.floor(kp.y / cellSize);
+			let bestIdx = -1;
 			let bestD = Infinity;
-			for (let j = 0; j < routePositions.length; j++) {
-				let d = kp.distanceToSquared(routePositions[j]);
-				if (d < bestD) { bestD = d; bestIdx = j; }
+			for (let dx = -1; dx <= 1; dx++) {
+				for (let dy = -1; dy <= 1; dy++) {
+					let bucket = grid.get((cx + dx) + ',' + (cy + dy));
+					if (!bucket) continue;
+					for (let k = 0; k < bucket.length; k++) {
+						let j = bucket[k];
+						let d = kp.distanceToSquared(routePositions[j]);
+						if (d < bestD) { bestD = d; bestIdx = j; }
+					}
+				}
+			}
+			// Fallback for poses farther than cellSize from any route point.
+			if (bestIdx < 0) {
+				for (let j = 0; j < routePositions.length; j++) {
+					let d = kp.distanceToSquared(routePositions[j]);
+					if (d < bestD) { bestD = d; bestIdx = j; }
+				}
 			}
 			pairs.push({ distance: routeDistances[bestIdx], quat: keyframes.quaternions[i].clone() });
 		}
