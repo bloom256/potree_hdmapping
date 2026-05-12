@@ -51,6 +51,12 @@
 		align-items: center; gap: 10px;
 	">
 		<span style="color: #aac; font: 12px monospace;">Route</span>
+		<button id="route_pause_btn" style="
+			pointer-events: auto; cursor: pointer;
+			background: #446; color: #fff; border: 1px solid #668;
+			border-radius: 3px; padding: 2px 10px; font: 12px monospace;
+			min-width: 70px;
+		">Pause</button>
 		<input id="route_fly_slider" type="range" min="0" max="1000" value="0" step="1" style="
 			pointer-events: auto; flex: 1; vertical-align: middle;
 		">
@@ -913,14 +919,30 @@
 
 					var routeSlice = new RouteSlice(viewer);
 
+					var pauseBtn = document.getElementById('route_pause_btn');
+
 					function setFlying(on) {
 						flying = on;
 						btn.textContent = on ? 'Stop Fly' : 'Route Fly';
 						bar.style.display = on ? 'flex' : 'none';
 						controlsHint.style.top = on ? '50px' : '10px';
+						pauseBtn.textContent = 'Pause';
 						if (on) routeSlice.start();
 						else routeSlice.stop();
 					}
+
+					// Pause/Resume: toggle the FP controls' routeFlyActive without tearing
+					// down the slider bar or the slice canvas, so the user can freeze the
+					// fly to inspect a spot and resume from the same position.
+					pauseBtn.addEventListener('click', function() {
+						if (!flying) return;
+						var fp = viewer.fpControls;
+						fp.routeFlyActive = !fp.routeFlyActive;
+						pauseBtn.textContent = fp.routeFlyActive ? 'Pause' : 'Resume';
+						var canvas = viewer.renderer && viewer.renderer.domElement;
+						if (canvas) canvas.focus();
+						else pauseBtn.blur();
+					});
 
 					// Track Potree sidebar open/close to keep the slider bar clear of the menu.
 					// toggleSidebar() sets #potree_render_area's `left` to 300px when open, 0 when closed.
