@@ -88,8 +88,24 @@ export class RouteSlice {
 		canvas.style.cssText = 'display: block; background: #111;';
 		this.canvas = canvas;
 
+		// Crosshair marker over the canvas, positioned each frame to show where
+		// the trajectory pose projects in the slice view (= center when no pan).
+		let marker = document.createElement('div');
+		marker.style.cssText =
+			'position: absolute;' +
+			'width: 14px; height: 14px;' +
+			'border: 2px solid #ff0;' +
+			'border-radius: 50%;' +
+			'box-sizing: border-box;' +
+			'background: rgba(255,200,0,0.25);' +
+			'box-shadow: 0 0 4px rgba(0,0,0,0.8);' +
+			'pointer-events: none;' +
+			'transform: translate(-50%, -50%);';
+		this.marker = marker;
+
 		container.appendChild(toolbar);
 		container.appendChild(canvas);
+		container.appendChild(marker);
 		document.body.appendChild(container);
 
 		this.threeRenderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: false, antialias: false });
@@ -210,8 +226,16 @@ export class RouteSlice {
 		this.camera.updateProjectionMatrix();
 	}
 
+	// Pose position interpolated from the trajectory at the current routeFlyDistance.
+	// We deliberately don't read viewer.scene.view.position - the main camera adds
+	// routeFlyHeightOffset (Space/Shift) and routeFlyCam*Offset (look-around drag),
+	// and the slice should stay locked to the actual trajectory pose regardless.
 	currentPosition () {
-		return this.viewer.scene.view.position.clone();
+		let fp = this.viewer.fpControls;
+		if (!fp.routeFlyPositions || !fp.routeFlyDistances) {
+			return this.viewer.scene.view.position.clone();
+		}
+		return this.positionAtDistance(fp.routeFlyDistance);
 	}
 
 	// Forward = trajectory tangent at the current routeFlyDistance, averaged over
@@ -302,5 +326,22 @@ export class RouteSlice {
 		gl.clearColor(0.05, 0.05, 0.05, 1);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		this.pRenderer.render(this.viewer.scene.scenePointCloud, this.camera);
+
+		this.updateMarker();
+	}
+
+	// Position the trajectory-position marker. In camera-local coords the pose is
+	// at (-hOffset, -vOffset, -thickness/2): ortho-project that to canvas pixels
+	// and offset by canvas.offsetTop so it lands over the canvas (not the toolbar).
+	updateMarker () {
+		if (!this.marker || !this.lastLayout) return;
+		let halfW = -this.camera.left;
+		let halfH = this.camera.top;
+		let w = this.lastLayout.width;
+		let h = this.lastLayout.height;
+		let screenX = (-this.hOffset + halfW) / (2 * halfW) * w;
+		let screenY = (halfH + this.vOffset) / (2 * halfH) * h;
+		this.marker.style.left = screenX + 'px';
+		this.marker.style.top = (this.canvas.offsetTop + screenY) + 'px';
 	}
 }
