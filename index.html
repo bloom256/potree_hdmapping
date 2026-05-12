@@ -148,6 +148,8 @@
 	<script type="module">
 
 	import * as THREE from "./libs/three.js/build/three.module.js";
+	import {CrossSectionTool} from "./viewer_ext/CrossSectionTool.js";
+	import {RouteSlice} from "./viewer_ext/RouteSlice.js";
 	import {LineSegmentsGeometry} from "./libs/three.js/lines/LineSegmentsGeometry.js";
 	import {LineSegments2} from "./libs/three.js/lines/LineSegments2.js";
 	import {LineMaterial} from "./libs/three.js/lines/LineMaterial.js";
@@ -292,83 +294,7 @@
 			viewer.setControls(viewer.fpControls);
 			viewer.setMoveSpeed(3);
 
-			// Cross-section: reuse Potree's built-in Profile tool. Stay in the user's current
-			// view (camera position/orientation unchanged) so the corridor lands on the area
-			// they were already looking at. LMB places markers (snaps to picked point on the
-			// cloud), RMB finishes; profileWindow shows the orthographic side view.
-			(function setupCrossSection() {
-				var csBtn = document.getElementById('cross_section_btn');
-				if (!csBtn) return;
-				csBtn.style.display = 'inline-block';
-
-				// The currently-displayed cross-section, if any. We keep at most one in the
-				// scene so the red corridor never lingers after the user moves on.
-				var currentProfile = null;
-
-				function clearCurrentProfile() {
-					if (currentProfile) {
-						viewer.scene.removeProfile(currentProfile);
-						currentProfile = null;
-					}
-				}
-
-				// The profile window's built-in close button only hide()s the window; it leaves
-				// the corridor in the 3D scene. Wrap profileWindow.hide() so any close path
-				// (X button, future programmatic close) also removes the profile. Wait for
-				// loadGUI to finish — profileWindow is constructed asynchronously inside it.
-				viewer.promiseGuiLoaded().then(function() {
-					var originalHide = viewer.profileWindow.hide.bind(viewer.profileWindow);
-					viewer.profileWindow.hide = function() {
-						originalHide();
-						clearCurrentProfile();
-					};
-				});
-
-				csBtn.addEventListener('click', function() {
-					clearCurrentProfile();
-					var profile = viewer.profileTool.startInsertion();
-					currentProfile = profile;
-
-					// A cross-section is a single rectangle: exactly two endpoints. After two
-					// LMB clicks, profile.points has 3 entries (initial + 2 placed + 1 in-flight
-					// being dragged). Dispatch cancel_insertions to drop the in-flight marker,
-					// leaving the two placed endpoints. Defer with setTimeout so the click
-					// cycle's startDragging() finishes before we tear down — otherwise it would
-					// re-grab the previous sphere we just kept.
-					var stopAfterTwo = function() {
-						if (profile.points.length >= 3) {
-							profile.removeEventListener('marker_added', stopAfterTwo);
-							setTimeout(function() {
-								viewer.dispatchEvent({ type: 'cancel_insertions' });
-							}, 0);
-						}
-					};
-					profile.addEventListener('marker_added', stopAfterTwo);
-
-					// Show the profile window only once insertion has finished, and only if
-					// both endpoints were placed. RMB-abort before two clicks discards the
-					// profile entirely. Deferred via setTimeout so ProfileTool's own cancel
-					// handler (which removes the in-flight marker) has run first.
-					var onCancel = function() {
-						viewer.removeEventListener('cancel_insertions', onCancel);
-						profile.removeEventListener('marker_added', stopAfterTwo);
-						setTimeout(function() {
-							if (profile.points.length === 2) {
-								viewer.profileWindow.show();
-								viewer.profileWindowController.setProfile(profile);
-							} else {
-								if (currentProfile === profile) currentProfile = null;
-								viewer.scene.removeProfile(profile);
-							}
-						}, 0);
-					};
-					viewer.addEventListener('cancel_insertions', onCancel);
-
-					var canvas = viewer.renderer && viewer.renderer.domElement;
-					if (canvas) canvas.focus();
-					else csBtn.blur();
-				});
-			})();
+			new CrossSectionTool(viewer).install();
 
 			// Coordinate display
 			var renderArea = document.getElementById('potree_render_area');
@@ -985,11 +911,15 @@
 
 					var controlsHint = document.getElementById('controls_hint');
 
+					var routeSlice = new RouteSlice(viewer);
+
 					function setFlying(on) {
 						flying = on;
 						btn.textContent = on ? 'Stop Fly' : 'Route Fly';
 						bar.style.display = on ? 'flex' : 'none';
 						controlsHint.style.top = on ? '50px' : '10px';
+						if (on) routeSlice.start();
+						else routeSlice.stop();
 					}
 
 					// Track Potree sidebar open/close to keep the slider bar clear of the menu.
@@ -1056,6 +986,7 @@
 							slider.value = Math.round(fraction * sliderMax);
 							progressLabel.textContent = Math.round(fraction * 100) + '%';
 						}
+						if (flying) routeSlice.onTick();
 						requestAnimationFrame(tickSlider);
 					}
 					requestAnimationFrame(tickSlider);
