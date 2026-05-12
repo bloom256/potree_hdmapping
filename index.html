@@ -155,7 +155,7 @@
 
 	import * as THREE from "./libs/three.js/build/three.module.js";
 	import {CrossSectionTool} from "./viewer_ext/CrossSectionTool.js";
-	import {RouteSlice} from "./viewer_ext/RouteSlice.js";
+	import {RouteFly} from "./viewer_ext/RouteFly.js";
 	import {LineSegmentsGeometry} from "./libs/three.js/lines/LineSegmentsGeometry.js";
 	import {LineSegments2} from "./libs/three.js/lines/LineSegments2.js";
 	import {LineMaterial} from "./libs/three.js/lines/LineMaterial.js";
@@ -220,50 +220,6 @@
 			return group;
 		}
 
-		// Show + wire the "Rotate camera" checkbox once both poses and a Route Fly path are
-		// available. Idempotent: called from the pose-load and trajectory-load callbacks since
-		// either may resolve first.
-		function setupRotateCameraToggle() {
-			var label = document.getElementById('rotate_camera_label');
-			var btn = document.getElementById('route_fly_btn');
-			if (!label || !btn) return;
-			var routeFlyReady = btn.style.display !== 'none';
-			var posesReady = !!window.poseOrientationKeyframes;
-			if (!routeFlyReady || !posesReady) {
-				label.style.display = 'none';
-				return;
-			}
-			label.style.display = 'inline-block';
-			if (label.dataset.wired === '1') return;
-			label.dataset.wired = '1';
-
-			var chk = document.getElementById('rotate_camera_chk');
-			chk.addEventListener('change', function() {
-				var kf = chk.checked ? window.poseOrientationKeyframes : null;
-				window.viewer.fpControls.setRouteFlyOrientationKeyframes(kf);
-			});
-		}
-
-		// Convert pose 4x4 matrices to {positions, quaternions} keyframes used by Route Fly's
-		// "Rotate camera" mode. Pose convention: row-major 4x4, +X is body forward.
-		function buildPoseOrientationKeyframes(poses) {
-			var positions = [];
-			var quaternions = [];
-			var mat4 = new THREE.Matrix4();
-			for (var i = 0; i < poses.length; i++) {
-				var m = poses[i].matrix;
-				positions.push(new THREE.Vector3(m[3], m[7], m[11]));
-				mat4.set(
-					m[0], m[1], m[2],  m[3],
-					m[4], m[5], m[6],  m[7],
-					m[8], m[9], m[10], m[11],
-					0,    0,    0,     1
-				);
-				quaternions.push(new THREE.Quaternion().setFromRotationMatrix(mat4));
-			}
-			return { positions: positions, quaternions: quaternions };
-		}
-
 		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
 
 		viewer.loadSettingsFromURL();
@@ -281,6 +237,8 @@
 			viewer.setLanguage('en');
 			$("#menu_appearance").next().show();
 		});
+
+		var routeFly = new RouteFly(viewer);
 
 		Potree.loadPointCloud(pcFile, "pointcloud", function(e) {
 			var pointcloud = e.pointcloud;
@@ -842,8 +800,7 @@
 				if (posesAfter) {
 					viewer.scene.scene.add(buildPoseAxes(posesAfter, 0.3));
 					drawScanIndexLabels(posesAfter);
-					window.poseOrientationKeyframes = buildPoseOrientationKeyframes(posesAfter);
-					setupRotateCameraToggle();
+					routeFly.setPoses(posesAfter);
 				}
 				if (posesBefore) {
 					viewer.scene.scene.add(buildPoseAxes(posesBefore, 0.15));
@@ -901,117 +858,7 @@
 					var start = offsetPositions[0];
 					viewer.scene.view.position.set(start.x, start.y, start.z + 2);
 
-					// Show Route Fly button
-					var btn = document.getElementById('route_fly_btn');
-					var bar = document.getElementById('route_fly_bar');
-					var slider = document.getElementById('route_fly_slider');
-					var progressLabel = document.getElementById('route_fly_progress');
-					btn.style.display = 'inline-block';
-					setupRotateCameraToggle();
-
-					viewer.fpControls.initRouteFly(window.trajectoryPositions);
-
-					var flying = false;
-					var scrubbing = false;
-					var sliderMax = parseInt(slider.max, 10);
-
-					var controlsHint = document.getElementById('controls_hint');
-
-					var routeSlice = new RouteSlice(viewer);
-
-					var pauseBtn = document.getElementById('route_pause_btn');
-
-					function setFlying(on) {
-						flying = on;
-						btn.textContent = on ? 'Stop Fly' : 'Route Fly';
-						bar.style.display = on ? 'flex' : 'none';
-						controlsHint.style.top = on ? '50px' : '10px';
-						pauseBtn.textContent = 'Pause';
-						if (on) routeSlice.start();
-						else routeSlice.stop();
-					}
-
-					// Pause/Resume: toggle the FP controls' routeFlyActive without tearing
-					// down the slider bar or the slice canvas, so the user can freeze the
-					// fly to inspect a spot and resume from the same position.
-					pauseBtn.addEventListener('click', function() {
-						if (!flying) return;
-						var fp = viewer.fpControls;
-						fp.routeFlyActive = !fp.routeFlyActive;
-						pauseBtn.textContent = fp.routeFlyActive ? 'Pause' : 'Resume';
-						var canvas = viewer.renderer && viewer.renderer.domElement;
-						if (canvas) canvas.focus();
-						else pauseBtn.blur();
-					});
-
-					// Track Potree sidebar open/close to keep the slider bar clear of the menu.
-					// toggleSidebar() sets #potree_render_area's `left` to 300px when open, 0 when closed.
-					var renderAreaEl = document.getElementById('potree_render_area');
-					function syncBarLeft() {
-						var shift = renderAreaEl ? parseInt(renderAreaEl.style.left || '0', 10) : 0;
-						bar.style.left = (shift + 60) + 'px';
-					}
-					if (renderAreaEl) {
-						new MutationObserver(syncBarLeft).observe(renderAreaEl, {
-							attributes: true, attributeFilter: ['style'],
-						});
-						syncBarLeft();
-					}
-
-					function updateSliderFromProgress() {
-						var fraction = viewer.fpControls.getRouteFlyProgress();
-						slider.value = Math.round(fraction * sliderMax);
-						progressLabel.textContent = Math.round(fraction * 100) + '%';
-					}
-
-					btn.addEventListener('click', function() {
-						if (!flying) {
-							// If we're parked near the end (usually after scrubbing to 100%),
-							// restart from the beginning. Otherwise resume where we stopped.
-							if (parseInt(slider.value, 10) >= sliderMax * 0.99) {
-								viewer.fpControls.seekRouteFly(0);
-							}
-							viewer.fpControls.startRouteFly(window.trajectoryPositions);
-							updateSliderFromProgress();
-							setFlying(true);
-						} else {
-							viewer.fpControls.stopRouteFly();
-							setFlying(false);
-						}
-						// Hand focus back to the render canvas; the InputHandler listens for keydown
-						// on it (tabIndex = 2222), so Space/WASD only reach the camera when the
-						// canvas — not the button — is focused.
-						var canvas = viewer.renderer && viewer.renderer.domElement;
-						if (canvas) canvas.focus();
-						else btn.blur();
-					});
-
-					viewer.fpControls.addEventListener('routefly_stopped', function() {
-						setFlying(false);
-						updateSliderFromProgress();
-					});
-
-					function onScrub() {
-						var fraction = parseInt(slider.value, 10) / sliderMax;
-						viewer.fpControls.seekRouteFly(fraction);
-						progressLabel.textContent = Math.round(fraction * 100) + '%';
-					}
-					slider.addEventListener('mousedown', function() { scrubbing = true; });
-					slider.addEventListener('touchstart', function() { scrubbing = true; });
-					slider.addEventListener('mouseup', function() { scrubbing = false; });
-					slider.addEventListener('touchend', function() { scrubbing = false; });
-					slider.addEventListener('input', onScrub);
-
-					function tickSlider() {
-						if (flying && !scrubbing) {
-							var fraction = viewer.fpControls.getRouteFlyProgress();
-							slider.value = Math.round(fraction * sliderMax);
-							progressLabel.textContent = Math.round(fraction * 100) + '%';
-						}
-						if (flying) routeSlice.onTick();
-						requestAnimationFrame(tickSlider);
-					}
-					requestAnimationFrame(tickSlider);
+					routeFly.setTrajectory(offsetPositions);
 				})
 				.catch(function(err) {
 					console.warn("Failed to load trajectory: " + err);
