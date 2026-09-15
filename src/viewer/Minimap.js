@@ -336,7 +336,7 @@ export class Minimap {
 		for (let pc of pointclouds) {
 			pc.pointBudget = 600000;
 		}
-		updateVisibility(pointclouds, cam, renderer);
+		updateVisibility(pointclouds, cam, renderer, {width: minimapSize, height: minimapSize});
 		Potree.pointBudget = savedGlobalBudget;
 
 		// Save and set material for minimap: fixed small points, EDL enabled

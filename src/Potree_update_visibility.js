@@ -100,7 +100,10 @@ export function updateVisibilityStructures(pointclouds, camera, renderer) {
 };
 
 
-export function updateVisibility(pointclouds, camera, renderer){
+// viewportSize: optional {width, height} in CSS pixels of the area `camera` renders
+// into. Defaults to the renderer's canvas; pass it when rendering into a sub-viewport
+// (e.g. the minimap) so node screen sizes aren't overestimated.
+export function updateVisibility(pointclouds, camera, renderer, viewportSize){
 
 	let numVisibleNodes = 0;
 	let numVisiblePoints = 0;
@@ -121,8 +124,8 @@ export function updateVisibility(pointclouds, camera, renderer){
 
 	let loadedToGPUThisFrame = 0;
 	
-	let domWidth = renderer.domElement.clientWidth;
-	let domHeight = renderer.domElement.clientHeight;
+	let domWidth = viewportSize ? viewportSize.width : renderer.domElement.clientWidth;
+	let domHeight = viewportSize ? viewportSize.height : renderer.domElement.clientHeight;
 
 	// check if pointcloud has been transformed
 	// some code will only be executed if changes have been detected
