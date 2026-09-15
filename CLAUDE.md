@@ -46,6 +46,12 @@ Generated or ignored: `build/`, `node_modules/`, `.pixi/`, `data/`, `potree_conv
 - On Windows the build can rewrite line endings in tracked files (e.g. `examples/github.html`). Don't commit EOL-only changes.
 - Only win-64 and linux-64 are supported (PotreeConverter binaries).
 
+## Git
+
+- Commit only when asked. Work goes on branch `hdmapping`. Never push — the owner pushes.
+- Keep history clean: one logical change per commit, short lowercase messages in the existing style (e.g. "pixi env added"), and no EOL-only or generated-file noise.
+- Commits are made under the repository owner's git identity only. Never add `Co-Authored-By`, `Claude-Session`, "Generated with Claude Code" or any other AI attribution to commit messages, PR titles or PR descriptions, and never use `--author` or change `user.name`/`user.email`.
+
 ## Conventions
 
 - JS uses tabs; Python uses 4 spaces and the standard library only. Add tools to `pixi.toml`, not pip.
