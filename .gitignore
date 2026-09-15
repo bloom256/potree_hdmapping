@@ -41,3 +41,4 @@ pointclouds/F
 *.csv
 trajectory.json
 __pycache__/
+.pixi/

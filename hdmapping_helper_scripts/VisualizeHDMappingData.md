@@ -4,23 +4,32 @@ This guide covers the end-to-end workflow for visualizing LAS/LAZ point clouds w
 
 ## Prerequisites
 
-- **Node.js** and **npm**
-- **Python 3** (stdlib only, no pip packages)
+- **[pixi](https://pixi.sh)** — provides Python and Node.js/npm from `pixi.toml` (Windows and Linux x64)
+
+The scripts use only the Python standard library, so there are no pip packages. Without pixi, install **Node.js** (20 LTS) with **npm** and **Python 3.10+** yourself and call `python` directly instead of `pixi run visualize`.
+
+```bash
+pixi install      # create the environment (.pixi/)
+pixi run build    # optional: npm install + build Potree (visualize also does this)
+```
 
 ## Quick Start
 
 ```bash
 # Full pipeline: point cloud + trajectory + poses + LC edges
-python hdmapping_helper_scripts/visualize.py --laz scan.laz --trajectory_csv trajectory.csv --poses_after_lc poses.txt --lc_edges_session session-alc.mjs
+pixi run visualize --laz scan.laz --trajectory_csv trajectory.csv --poses_after_lc poses.txt --lc_edges_session session-alc.mjs
 
 # Point cloud + trajectory + poses (no edges)
-python hdmapping_helper_scripts/visualize.py --laz scan.laz --trajectory_csv trajectory.csv --poses_after_lc poses.txt
+pixi run visualize --laz scan.laz --trajectory_csv trajectory.csv --poses_after_lc poses.txt
 
 # Point cloud + trajectory only
-python hdmapping_helper_scripts/visualize.py --laz scan.laz --trajectory_csv trajectory.csv
+pixi run visualize --laz scan.laz --trajectory_csv trajectory.csv
 
 # Point cloud only
-python hdmapping_helper_scripts/visualize.py --laz scan.laz
+pixi run visualize --laz scan.laz
+
+# Reopen an already converted dataset from data/<name>/
+pixi run visualize --dataset scan
 ```
 
 On first run, PotreeConverter is auto-downloaded and the viewer is built automatically (`npm install && npm run build`).

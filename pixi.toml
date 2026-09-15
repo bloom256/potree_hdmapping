@@ -1,0 +1,14 @@
+[workspace]
+name = "potree_hdmapping"
+description = "Potree viewer for HD mapping data (point clouds, trajectories, loop closures)"
+channels = ["conda-forge"]
+# PotreeConverter is only downloaded for these platforms (see potree_converte_links.txt).
+platforms = ["win-64", "linux-64"]
+
+[dependencies]
+python = ">=3.10,<3.14"
+nodejs = "20.*"
+
+[tasks]
+build = { cmd = "npm install", description = "Install npm packages and build Potree (postinstall runs the build)" }
+visualize = { cmd = "python hdmapping_helper_scripts/visualize.py", description = "Convert/open a dataset and start the viewer, e.g. pixi run visualize --laz scan.laz" }
