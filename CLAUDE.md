@@ -22,7 +22,7 @@ There are no automated tests or linters. Verify changes in the browser and check
 Fork-owned:
 - `index.html` — the HD mapping viewer page: overlays (trajectory line, pose axes, scan labels, LC edges, before/after links), flags, MMB pick/measure, go-to box, keyboard shortcuts.
 - `viewer_ext/` — ES modules served straight from source: `RouteFly.js` (Route Fly UI + per-frame tick), `RouteSlice.js` (live cross-section in a second WebGL context), `ForwardMarker.js`, `CrossSectionTool.js` (wraps Potree's Profile tool).
-- `hdmapping_helper_scripts/` — `visualize.py` (entry point), converters (`convert_trajectory_csv.py`, `parse_poses.py`, `parse_session.py`), `server.js` (static server with Range support + `POST /save-file` used for `flags.json`), `VisualizeHDMappingData.md` (user guide). `convert_las_to_copc.py` is legacy and unused.
+- `hdmapping_helper_scripts/` — `visualize.py` (entry point), converters (`convert_trajectory_csv.py`, `parse_poses.py`, `parse_session.py`), `server.js` (static server with Range support + `POST /save-file` used for `flags.json`), `VisualizeHDMappingData.md` (user guide).
 - `potree_converte_links.txt` — PotreeConverter 2.1.2 URLs + SHA256. The misspelled filename is read by `visualize.py`; rename both together.
 
 Upstream Potree files patched by the fork (keep diffs small and commented — they conflict with upstream merges):
