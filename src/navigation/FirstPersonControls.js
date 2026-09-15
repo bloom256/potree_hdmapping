@@ -64,6 +64,9 @@ export class FirstPersonControls extends EventDispatcher {
 		this.routeFlyTotalLength = 0;
 		this.routeFlyDistance = 0;
 		this.routeFlyHeightOffset = 0;
+		// Paused keeps the fly active (WASD ends it, Space/Shift and mouse look still work)
+		// but stops advancing along the route.
+		this.routeFlyPaused = false;
 		// Optional pose-driven orientation: keyframes projected onto the route's arc-length.
 		// Both arrays are the same length and sorted by ascending distance.
 		this.routeFlyKeyframeDistances = null;
@@ -306,7 +309,12 @@ export class FirstPersonControls extends EventDispatcher {
 	startRouteFly (positions, options) {
 		if (!this.initRouteFly(positions, options)) return;
 		this.routeFlyHeightOffset = 0;
+		this.routeFlyPaused = false;
 		this.routeFlyActive = true;
+	}
+
+	setRouteFlyPaused (paused) {
+		this.routeFlyPaused = this.routeFlyActive && !!paused;
 	}
 
 	getRouteFlyProgress () {
@@ -378,6 +386,7 @@ export class FirstPersonControls extends EventDispatcher {
 	stopRouteFly () {
 		let wasActive = this.routeFlyActive;
 		this.routeFlyActive = false;
+		this.routeFlyPaused = false;
 		if (wasActive) {
 			this.dispatchEvent({type: 'routefly_stopped'});
 		}
@@ -461,14 +470,16 @@ export class FirstPersonControls extends EventDispatcher {
 			}
 		}
 
-		if (this.routeFlyActive) { // advance route fly by moveSpeed
-			this.routeFlyDistance += this.viewer.getMoveSpeed() * delta;
+		if (this.routeFlyActive) { // advance route fly by moveSpeed; hold position while paused
+			if (!this.routeFlyPaused) {
+				this.routeFlyDistance += this.viewer.getMoveSpeed() * delta;
+			}
 
-			if (this.routeFlyDistance >= this.routeFlyTotalLength) {
-				// reached the end — snap to last point and stop
-				let last = this.routeFlyPositions[this.routeFlyPositions.length - 1];
-				this.scene.view.position.set(last.x, last.y, last.z + this.routeFlyHeightOffset);
-				this.routeFlyDistance = 0;
+			if (!this.routeFlyPaused && this.routeFlyDistance >= this.routeFlyTotalLength) {
+				// reached the end — snap to the last point and stop, leaving progress at 100%
+				// so the next Route Fly restarts from the beginning
+				this.routeFlyDistance = this.routeFlyTotalLength;
+				this.applyRouteFlyPosition();
 				this.stopRouteFly();
 			} else {
 				this.applyRouteFlyPosition();

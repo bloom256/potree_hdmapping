@@ -120,13 +120,14 @@ export class RouteFly {
 			this.updateSliderFromProgress();
 		});
 
-		// Pause/Resume: toggle routeFlyActive without tearing down the bar/slice
-		// so the user can freeze the fly to inspect a spot and resume.
+		// Pause/Resume: freeze progress along the route without leaving Route Fly, so
+		// the bar/slice stay up, Space/Shift and mouse look keep working, and WASD
+		// still ends the fly cleanly.
 		this.pauseBtn.addEventListener('click', () => {
 			if (!this.flying) return;
 			let fp = this.viewer.fpControls;
-			fp.routeFlyActive = !fp.routeFlyActive;
-			this.pauseBtn.textContent = fp.routeFlyActive ? 'Pause' : 'Resume';
+			fp.setRouteFlyPaused(!fp.routeFlyPaused);
+			this.pauseBtn.textContent = fp.routeFlyPaused ? 'Resume' : 'Pause';
 			this.focusCanvas();
 		});
 
