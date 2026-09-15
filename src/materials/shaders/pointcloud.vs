@@ -303,6 +303,8 @@ float getSpacing(){
 	return spacing;
 }
 
+// hdmapping fork: base 1.5 instead of upstream 2.0. Adaptive point size divides by
+// this, so points at deeper octree levels shrink less than upstream.
 float getPointSizeAttenuation(){
 	return pow(1.5, getLOD());
 }

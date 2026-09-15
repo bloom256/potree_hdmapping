@@ -47,7 +47,9 @@ void main() {
 		float v = 2.0 * gl_PointCoord.y - 1.0;
 	#endif
 	
-	#if defined(circle_point_shape) 
+	#if defined(circle_point_shape)
+		// hdmapping fork: discard intentionally disabled, so "circle" points render
+		// as filled squares. Kept on purpose; check the viewer before restoring.
 		//float cc = u*u + v*v;
 		//if(cc > 1.0){
 		//	discard;
@@ -88,6 +90,9 @@ void main() {
 
 	#if defined(weighted_splats)
 		float distance = 2.0 * length(gl_PointCoord.xy - 0.5);
+		// hdmapping fork: 1.733 instead of upstream 1.0. distance reaches sqrt(2) at the
+		// square's corners, so the whole square keeps a positive weight in the blend;
+		// upstream 1.0 zeroes everything outside the inscribed circle.
 		float weight = max(0.0, 1.733 - distance);
 		weight = pow(weight, 1.5);
 
