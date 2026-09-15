@@ -11,6 +11,7 @@ Open mode opens an existing dataset from data/<name>/ without conversion.
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import shutil
@@ -61,6 +62,40 @@ def get_lan_ip():
         return None
     finally:
         s.close()
+
+
+TAILSCALE_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
+
+def get_tailscale_ip():
+    """Return the host's Tailscale IPv4 address, or None if Tailscale isn't up.
+
+    Asks the tailscale CLI first; falls back to looking for a local address in
+    Tailscale's 100.64.0.0/10 range (covers installs where the CLI isn't on PATH).
+    """
+    exe = shutil.which("tailscale")
+    if exe:
+        try:
+            result = subprocess.run([exe, "ip", "-4"], capture_output=True,
+                                    text=True, timeout=3, check=False)
+            for line in result.stdout.split():
+                try:
+                    if ipaddress.ip_address(line) in TAILSCALE_NETWORK:
+                        return line
+                except ValueError:
+                    continue
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except OSError:
+        return None
+    for info in infos:
+        addr = info[4][0]
+        if ipaddress.ip_address(addr) in TAILSCALE_NETWORK:
+            return addr
+    return None
 
 
 def find_available_port(start=8080):
@@ -466,11 +501,15 @@ def main():
 
     log(f"Starting Node.js HTTP server on port {port}")
     log(f"Serving from: {project_root}")
-    log(f"Viewer URL: {url}")
+    log(f"Viewer URL:    {url}")
     lan_ip = get_lan_ip()
     if lan_ip:
         lan_url = f"http://{lan_ip}:{port}/index.html?{query}"
-        log(f"LAN URL:    {lan_url}")
+        log(f"LAN URL:       {lan_url}")
+    tailscale_ip = get_tailscale_ip()
+    if tailscale_ip and tailscale_ip != lan_ip:
+        tailscale_url = f"http://{tailscale_ip}:{port}/index.html?{query}"
+        log(f"Tailscale URL: {tailscale_url}")
     log("Opening browser ...")
 
     threading.Timer(0.5, lambda: webbrowser.open(url)).start()
