@@ -98,16 +98,42 @@ def get_tailscale_ip():
     return None
 
 
+def is_port_free(port):
+    """Return True if a server could listen on *port*.
+
+    server.js listens on "::" (dual-stack IPv6 + IPv4), so probe the same way.
+    An IPv4-only bind on 0.0.0.0 is not enough: on Windows it succeeds even
+    while another process holds [::]:port, and node then fails with EADDRINUSE.
+    """
+    try:
+        s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+    except (OSError, AttributeError):
+        s = None  # no IPv6 support; node falls back to 0.0.0.0 as well
+
+    if s is not None:
+        with s:
+            try:
+                s.bind(("::", port))
+                return True
+            except OSError:
+                return False
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("", port))
+            return True
+        except OSError:
+            return False
+
+
 def find_available_port(start=8080):
     """Find an available port starting from *start*."""
     for port in range(start, start + 100):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("", port))
-                log(f"Found available port: {port}")
-                return port
-            except OSError:
-                continue
+        if is_port_free(port):
+            log(f"Found available port: {port}")
+            return port
+        log(f"Port {port} is in use, trying next")
     raise RuntimeError("No available port found")
 
 
