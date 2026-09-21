@@ -58,7 +58,7 @@ Arguments:
 | `--laz` | One of `--laz` / `--dataset` | Input LAS/LAZ point cloud file (import mode) |
 | `--dataset` | One of `--laz` / `--dataset` | Open an existing dataset from `data/<name>/`; can't be combined with the other options |
 | `--dataset_name` | No | Dataset name to use instead of the LAZ filename |
-| `--trajectory_csv` | No | Trajectory CSV file (no header; columns: `timestamp,x,y,z,qx,qy,qz,qw`) |
+| `--trajectory_csv` | No | Trajectory CSV file (headerless or with comments and a header, see below) |
 | `--poses_after_lc` | No | Poses after loop closure (see format below) |
 | `--poses_before_lc` | No | Poses before loop closure, drawn smaller and linked to the after-LC poses |
 | `--lc_edges_session` | No | Session `.mjs` file to extract loop closure edges from |
@@ -77,12 +77,25 @@ The Tailscale URL is shown only when Tailscale is running on this machine. Stop 
 
 ### Trajectory CSV
 
-No header. Columns: `timestamp,x,y,z,qx,qy,qz,qw`. Only x, y, z (columns 1-3) are used; unparseable rows are skipped.
+Two variants are accepted. Only x, y, z are used; unparseable data rows are skipped.
+
+Legacy: no header, columns `timestamp,x,y,z,qx,qy,qz,qw` (x, y, z are columns 1-3).
 
 ```
 1609459200.0,100.5,200.3,50.1,0,0,0,1
 1609459200.1,100.6,200.4,50.1,0,0,0,1
 ```
+
+With header: optional `#` comment lines (e.g. CRS info), then a header row. x, y, z are found by column name.
+
+```
+# trajectory export, generated (UTC): 2026-09-21T14:18:44Z
+# CRS: WGS 84 / UTM zone 33N (EPSG:32633)
+lidar_ts_ns,x,y,z,qx,qy,qz,qw
+1785488972958685696,457302.880,5547118.250,199.168,-0.0595,0.1099,0.8905,-0.4373
+```
+
+Blank lines and `#` lines are ignored in both variants. Georeferenced coordinates (e.g. UTM) are fine: the point cloud and trajectory use the same frame.
 
 ### Poses Text File
 

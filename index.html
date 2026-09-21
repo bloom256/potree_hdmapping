@@ -830,12 +830,16 @@
 				.then(function(positions) {
 					if (!positions || positions.length === 0) return;
 
+					// Vertices are stored relative to the first point and the line is
+					// moved there: georeferenced (e.g. UTM) coordinates lose ~0.5 m of
+					// precision as float32, the object transform stays in float64.
+					var origin = positions[0];
 					var offsetPositions = [];
 					var vertices = new Float32Array(positions.length * 3);
 					for (var i = 0; i < positions.length; i++) {
-						vertices[i * 3]     = positions[i][0];
-						vertices[i * 3 + 1] = positions[i][1];
-						vertices[i * 3 + 2] = positions[i][2];
+						vertices[i * 3]     = positions[i][0] - origin[0];
+						vertices[i * 3 + 1] = positions[i][1] - origin[1];
+						vertices[i * 3 + 2] = positions[i][2] - origin[2];
 						offsetPositions.push(new THREE.Vector3(
 							positions[i][0],
 							positions[i][1],
@@ -850,6 +854,7 @@
 
 					var material = new THREE.LineBasicMaterial({ color: 0xff0000 });
 					var line = new THREE.Line(geometry, material);
+					line.position.set(origin[0], origin[1], origin[2]);
 
 					viewer.scene.scene.add(line);
 					console.log("Trajectory loaded: " + positions.length + " points");

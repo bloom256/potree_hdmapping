@@ -3,8 +3,12 @@
 
 Usage: python convert_trajectory_csv.py <trajectory.csv> [output.json]
 
-Input CSV has no header. Columns: timestamp,x,y,z,qx,qy,qz,qw
-Output is a JSON array of [x, y, z] positions (columns 1, 2, 3).
+Two input variants are accepted:
+  - legacy: no header, columns timestamp,x,y,z,qx,qy,qz,qw
+  - with header: optional '#' comment lines (e.g. CRS), then a header row
+    such as lidar_ts_ns,x,y,z,qx,qy,qz,qw
+With a header, x/y/z are looked up by name; otherwise columns 1, 2, 3 are used.
+Output is a JSON array of [x, y, z] positions.
 """
 
 import csv
@@ -13,28 +17,49 @@ import os
 import sys
 
 
+def _is_number(value):
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
+
+
 def parse_trajectory_csv(path):
     """Parse a trajectory CSV into a list of [x, y, z] positions.
 
-    Input CSV has no header. Columns: timestamp,x,y,z,qx,qy,qz,qw.
-    Rows that fail to parse are skipped.
+    Blank lines and lines starting with '#' are ignored. If the first
+    remaining row is not numeric it is taken as a header and the x, y, z
+    columns are found by name; otherwise columns 1, 2, 3 are used
+    (legacy format timestamp,x,y,z,qx,qy,qz,qw). Data rows that fail to
+    parse are skipped.
 
     Returns:
         (positions, skipped) where positions is list of [x, y, z] and
-        skipped is the count of unparseable rows.
+        skipped is the count of unparseable data rows.
     """
     positions = []
     skipped = 0
-    with open(path, "r", newline="") as f:
-        reader = csv.reader(f)
-        for row_num, row in enumerate(reader, start=1):
-            if len(row) < 4:
-                skipped += 1
-                continue
+    ix, iy, iz = 1, 2, 3
+    header_seen = False
+    with open(path, "r", newline="", encoding="utf-8") as f:
+        lines = (line for line in f if line.strip() and not line.lstrip().startswith("#"))
+        reader = csv.reader(lines)
+        for row in reader:
+            row = [cell.strip() for cell in row]
+            if not header_seen:
+                header_seen = True
+                if row and not _is_number(row[0]):
+                    names = [cell.lower() for cell in row]
+                    try:
+                        ix, iy, iz = names.index("x"), names.index("y"), names.index("z")
+                    except ValueError:
+                        raise ValueError(f"trajectory CSV header has no x, y, z columns: {row}")
+                    continue
             try:
-                x = float(row[1])
-                y = float(row[2])
-                z = float(row[3])
+                x = float(row[ix])
+                y = float(row[iy])
+                z = float(row[iz])
             except (ValueError, IndexError):
                 skipped += 1
                 continue
