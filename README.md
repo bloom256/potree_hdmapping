@@ -1,4 +1,50 @@
+# potree_hdmapping
 
+A fork of [Potree](https://github.com/potree/potree) 1.8 for inspecting the output of HD mapping / LiDAR SLAM sessions in the browser: a LAZ point cloud together with the sensor trajectory, the poses before and after loop closure, and the loop closure edges.
+
+The goal is to make a mapping session reviewable. You fly along the recorded route, see where loop closure moved the poses, measure distances, cut cross-sections and flag places that need attention.
+
+The rendering is tuned to expose noise, not to look good. Point size, splatting and the shaders are set so that stray points, doubled walls and drift stay visible instead of being smoothed away, so a clean map looks plainer here than in a viewer meant for presentation.
+
+## Install
+
+Requires [pixi](https://pixi.sh), which provides Python and Node.js (Windows and Linux, 64-bit). No pip packages are needed.
+
+```bash
+pixi install
+```
+
+## Use
+
+```bash
+# Any LAS/LAZ file, no overlays
+pixi run visualize --laz cloud.laz
+
+# Point cloud + trajectory
+pixi run visualize --laz scan.laz --trajectory_csv trajectory.csv
+
+# Add loop closure: poses after LC, poses before LC, and the LC edges
+pixi run visualize --laz scan.laz --trajectory_csv trajectory.csv --poses_after_lc poses.txt --poses_before_lc poses_before.txt --lc_edges_session session-alc.mjs
+
+# Reopen an already converted dataset from data/<name>/
+pixi run visualize --dataset scan
+```
+
+The first run downloads PotreeConverter, converts the LAZ into `data/<name>/`, starts a local web server and opens the viewer. Only `--laz` is required, so any LAS/LAZ file works — the overlays are optional and the viewer is usable as a plain point cloud inspector without them.
+
+Three URLs are printed: localhost, the LAN address, and — when [Tailscale](https://tailscale.com) is running on the machine — its Tailscale address. The dataset stays on the machine that converted it, and you can open the Tailscale URL from any other device on your tailnet, so a heavy cloud can be explored from a laptop or tablet without copying it anywhere.
+
+Move with WASD, look with the mouse or the arrow keys, and change speed with the scroll wheel. In the viewer you can fly the route automatically (**Route Fly**) with a live cross-section beside it, pick and measure points with the middle mouse button, drop flags that are saved with the dataset, and filter points by attribute.
+
+[hdmapping_helper_scripts/VisualizeHDMappingData.md](hdmapping_helper_scripts/VisualizeHDMappingData.md) is the full guide: input file formats, all arguments, the complete control list and troubleshooting.
+
+## Developing
+
+`pixi run npm run build` rebuilds after changes in `src/`. `index.html` and `viewer_ext/` are served as-is, so a page reload is enough. Fork work happens on the `hdmapping` branch; `develop` tracks upstream Potree.
+
+---
+
+Everything below is the original Potree README.
 
 # About
 
