@@ -231,6 +231,14 @@
 		viewer.fpControls.lockElevation = true;
 		viewer.useHQ = true;
 
+		viewer.setClassifications({
+			...Potree.ClassificationScheme.DEFAULT,
+			0: { visible: true, name: 'never classified', color: [1.0, 1.0, 1.0, 1.0] },
+			1: { visible: true, name: 'unclassified', color: [1.0, 1.0, 1.0, 1.0] },
+			30: { visible: true, name: 'noise', color: [1.0, 0.0, 0.0, 1.0] },
+			31: { visible: true, name: 'moving object', color: [1.0, 1.0, 0.0, 1.0] },
+		});
+
 		viewer.setDescription("Loading point cloud...");
 
 		viewer.loadGUI(() => {
